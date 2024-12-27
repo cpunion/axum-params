@@ -3,7 +3,7 @@
 A powerful parameter handling library for [Axum](https://github.com/tokio-rs/axum) web framework, inspired by [Ruby on Rails](https://rubyonrails.org/)' parameter system. Seamlessly handles multiple parameter sources and tree-structured data with file uploads.
 
 
-[![Build Status](https://github.com/cpunion/axum-params/actions/workflows/test.yml/badge.svg)](https://github.com/cpunion/axum-params/actions/workflows/test.yml)
+[![Build Status](https://github.com/cpunion/axum-params/actions/workflows/ci.yml/badge.svg)](https://github.com/cpunion/axum-params/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/github/cpunion/axum-params/graph/badge.svg?token=uATQa0RzPL)](https://codecov.io/github/cpunion/axum-params)
 [![crate](https://img.shields.io/crates/v/axum-params.svg)](https://crates.io/crates/axum-params)
 [![docs](https://docs.rs/axum-params/badge.svg)](https://docs.rs/axum-params)
