@@ -1,0 +1,33 @@
+[package]
+name = "axum-params"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1.83"
+axum = { version = "0.7.9", features = ["multipart", "macros"] }
+axum-macros = "0.4.2"
+log = "0.4.22"
+multer = "3.1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.134"
+serde_urlencoded = "0.7.1"
+tempfile = "3.14.0"
+tokio = { version = "1.42.0", features = ["fs", "io-util", "rt-multi-thread", "macros", "net"] }
+url = "2.5.4"
+
+[dev-dependencies]
+axum-test = "16.4.1"
+futures-util = "0.3.31"
+
+[[example]]
+name = "basic_params"
+path = "examples/basic_params.rs"
+
+[[example]]
+name = "file_upload"
+path = "examples/file_upload.rs"
+
+[[example]]
+name = "nested_params"
+path = "examples/nested_params.rs"
