@@ -57,7 +57,40 @@ axum-params = "0.1"
 
 ## Quick Start
 
-Check out our examples:
+```rust
+use axum::{routing::post, Router};
+use axum_params::Params;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+struct Attachment {
+    file: UploadFile,
+    description: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Post {
+    title: String,
+    content: String,
+    tags: Vec<String>,
+    cover: UploadFile,
+    attachments: Vec<Attachment>,
+}
+
+#[debug_handler]
+async fn create_post_handler(Params(post, _): Params<Post>) -> impl IntoResponse {
+    // Handle cover file
+    let mut cover_file = post.cover.open().await.unwrap();
+    // process file
+    // Handle attachments
+    for attachment in post.attachments {
+        let mut file = attachment.file.open().await.unwrap();
+        // process file
+    }
+}
+```
+
+## Examples
 
 - [Basic Parameters](examples/basic_params.rs) - Handling path, query, and JSON parameters
 - [File Upload](examples/file_upload.rs) - Basic file upload with metadata
