@@ -2,6 +2,11 @@
 name = "axum-params"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "A Rails-like powerful parameter handling library for Axum"
+repository = "https://github.com/cpunion/axum-params"
+keywords = ["axum", "params", "serde", "rails"]
+categories = ["web-programming"]
 
 [dependencies]
 async-trait = "0.1.83"
