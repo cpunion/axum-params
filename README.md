@@ -69,7 +69,7 @@ struct Attachment {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Post {
+struct CreatePost {
     title: String,
     content: String,
     tags: Vec<String>,
@@ -78,7 +78,7 @@ struct Post {
 }
 
 #[debug_handler]
-async fn create_post_handler(Params(post, _): Params<Post>) -> impl IntoResponse {
+async fn create_post_handler(Params(post, _): Params<CreatePost>) -> impl IntoResponse {
     // Handle cover file
     let mut cover_file = post.cover.open().await.unwrap();
     // process file
@@ -90,54 +90,83 @@ async fn create_post_handler(Params(post, _): Params<Post>) -> impl IntoResponse
 }
 ```
 
+## Rails-like Parameter Structure
+
+Just like Rails, you can send nested parameters in various formats:
+
+### Combined Parameters Example
+```bash
+# Combining path parameters, query parameters, and form data
+curl -X POST "http://localhost:3000/posts/123?draft=true" \
+  -F "post[title]=My First Post" \
+  -F "post[content]=Hello World from Axum" \
+  -F "post[tags][]=rust" \
+  -F "post[cover]=@cover.jpg"
+```
+
+### JSON Body
+```bash
+# Sending JSON data (note: file uploads not possible in pure JSON)
+curl -X POST http://localhost:3000/posts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "post": {
+      "title": "My First Post",
+      "content": "Hello World from Axum",
+      "tags": ["rust", "web", "axum"]
+    }
+  }'
+```
+
+### Form Data
+```bash
+# Basic form data with nested parameters and file uploads
+curl -X POST http://localhost:3000/posts \
+  -F "post[title]=My First Post" \
+  -F "post[content]=Hello World from Axum" \
+  -F "post[tags][]=rust" \
+  -F "post[tags][]=web" \
+  -F "post[tags][]=axum" \
+  -F "post[cover]=@cover.jpg" \
+  -F "post[attachments][][file]=@document.pdf" \
+  -F "post[attachments][][description]=Project Documentation" \
+  -F "post[attachments][][file]=@diagram.png" \
+  -F "post[attachments][][description]=Architecture Diagram"
+```
+
+### Multipart Form
+The library automatically handles multipart form data, allowing you to upload files within nested structures. Files can be placed at any level in the parameter tree, and you can combine them with regular form fields.
+
+```bash
+# Complex multipart form matching the Post struct example
+curl -X POST http://localhost:3000/posts \
+  -F "post[title]=My First Post" \
+  -F "post[content]=Hello World from Axum" \
+  -F "post[tags][]=rust" \
+  -F "post[tags][]=web" \
+  -F "post[tags][]=axum" \
+  -F "post[cover]=@cover.jpg" \
+  -F "post[attachments][][file]=@document.pdf" \
+  -F "post[attachments][][description]=Project Documentation" \
+  -F "post[attachments][][file]=@diagram.png" \
+  -F "post[attachments][][description]=Architecture Diagram" \
+  -F "post[attachments][][file]=@screenshot.jpg" \
+  -F "post[attachments][][description]=Application Screenshot"
+```
+
+This example demonstrates how the multipart form maps to the Rust struct:
+- Single field (`title`, `content`)
+- Array field (`tags[]`)
+- Single file field (`cover`)
+- Nested array with files (`attachments[]` with `file` and `description`)
+
 ## Examples
 
 - [Basic Parameters](examples/basic_params.rs) - Handling path, query, and JSON parameters
 - [File Upload](examples/file_upload.rs) - Basic file upload with metadata
 - [Nested Parameters](examples/nested_params.rs) - Complex nested structures with multiple file uploads
 
-## Rails-like Parameter Structure
-
-Just like Rails, you can send nested parameters in various formats:
-
-### Form Data
-```
-post[title]=My Post
-post[content]=Hello World
-post[tags][]=rust
-post[tags][]=web
-post[cover]=@file1.jpg
-post[attachments][0][name]=Document
-post[attachments][0][file]=@doc.pdf
-post[attachments][1][name]=Image
-post[attachments][1][file]=@image.png
-```
-
-### JSON Body
-```json
-{
-  "title": "My Post",
-  "content": "Hello World",
-  "tags": ["rust", "web"],
-  "name": "john",
-  "extra": "additional info"
-}
-```
-
-### Combined Parameters Example
-```rust
-// Route: "/users/:id"
-let response = server
-    .post("/users/123")                         // Path parameter
-    .add_query_params(&[("extra", "query")])    // Query parameter
-    .json(&json!({ "name": "test" }))           // JSON body
-    .await;
-```
-
-### Multipart Form
-The library automatically handles multipart form data, allowing you to upload files within nested structures. Files can be placed at any level in the parameter tree, and you can combine them with regular form fields.
-
-## Running Examples
+### Running Examples
 
 ```bash
 # Run basic parameters example
