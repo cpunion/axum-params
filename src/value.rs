@@ -168,6 +168,7 @@ pub fn parse_json(feeder: SliceJsonFeeder) -> Result<ParamsValue, JsonError> {
     result.ok_or(JsonError::NoMoreInput)
 }
 
+#[derive(Debug)]
 pub enum JsonError {
     SyntaxError,
     NoMoreInput,
@@ -264,5 +265,138 @@ mod tests {
         assert_ne!(Number::from(42u64), Number::from(43u64));
         assert_ne!(Number::from(-42i64), Number::from(-43i64));
         assert_ne!(Number::from(42.0), Number::from(42.5));
+    }
+
+    #[test]
+    fn test_parse_json_numbers() {
+        // Test positive integers
+        let json = r#"{"pos": 42, "zero": 0, "big": 9007199254740991}"#;
+        let result = parse_json(SliceJsonFeeder::new(json.as_bytes())).unwrap();
+        if let ParamsValue::Object(map) = result {
+            assert!(matches!(
+                map["pos"],
+                ParamsValue::Number(Number(N::PosInt(42)))
+            ));
+            assert!(matches!(
+                map["zero"],
+                ParamsValue::Number(Number(N::PosInt(0)))
+            ));
+            assert!(matches!(
+                map["big"],
+                ParamsValue::Number(Number(N::PosInt(9007199254740991)))
+            ));
+        } else {
+            panic!("Expected object");
+        }
+
+        // Test negative integers
+        let json = r#"{"neg": -42, "min": -9007199254740991}"#;
+        let result = parse_json(SliceJsonFeeder::new(json.as_bytes())).unwrap();
+        if let ParamsValue::Object(map) = result {
+            assert!(matches!(
+                map["neg"],
+                ParamsValue::Number(Number(N::NegInt(-42)))
+            ));
+            assert!(matches!(
+                map["min"],
+                ParamsValue::Number(Number(N::NegInt(-9007199254740991)))
+            ));
+        } else {
+            panic!("Expected object");
+        }
+
+        // Test floating point numbers
+        let json = r#"{
+            "float": 42.5,
+            "neg_float": -42.5,
+            "zero_float": 0.0,
+            "exp": 1.23e5,
+            "neg_exp": -1.23e-5
+        }"#;
+        let result = parse_json(SliceJsonFeeder::new(json.as_bytes())).unwrap();
+        if let ParamsValue::Object(map) = result {
+            assert!(
+                matches!(map["float"], ParamsValue::Number(Number(N::Float(v))) if (v - 42.5).abs() < f64::EPSILON)
+            );
+            assert!(
+                matches!(map["neg_float"], ParamsValue::Number(Number(N::Float(v))) if (v - (-42.5)).abs() < f64::EPSILON)
+            );
+            assert!(
+                matches!(map["zero_float"], ParamsValue::Number(Number(N::Float(v))) if v.abs() < f64::EPSILON)
+            );
+            assert!(
+                matches!(map["exp"], ParamsValue::Number(Number(N::Float(v))) if (v - 123000.0).abs() < f64::EPSILON)
+            );
+            assert!(
+                matches!(map["neg_exp"], ParamsValue::Number(Number(N::Float(v))) if (v - (-0.0000123)).abs() < f64::EPSILON)
+            );
+        } else {
+            panic!("Expected object");
+        }
+
+        // Test array of numbers
+        let json = r#"[42, -42, 42.5, 0, -0.0]"#;
+        let result = parse_json(SliceJsonFeeder::new(json.as_bytes())).unwrap();
+        if let ParamsValue::Array(arr) = result {
+            assert!(matches!(arr[0], ParamsValue::Number(Number(N::PosInt(42)))));
+            assert!(matches!(
+                arr[1],
+                ParamsValue::Number(Number(N::NegInt(-42)))
+            ));
+            assert!(
+                matches!(arr[2], ParamsValue::Number(Number(N::Float(v))) if (v - 42.5).abs() < f64::EPSILON)
+            );
+            assert!(matches!(arr[3], ParamsValue::Number(Number(N::PosInt(0)))));
+            assert!(
+                matches!(arr[4], ParamsValue::Number(Number(N::Float(v))) if v.abs() < f64::EPSILON)
+            );
+        } else {
+            panic!("Expected array");
+        }
+    }
+
+    #[test]
+    fn test_parse_json_mixed_types() {
+        let json = r#"{
+            "number": 42,
+            "string": "hello",
+            "bool": true,
+            "null": null,
+            "array": [1, "two", false],
+            "nested": {"a": 1, "b": 2}
+        }"#;
+        let result = parse_json(SliceJsonFeeder::new(json.as_bytes())).unwrap();
+        if let ParamsValue::Object(map) = result {
+            assert!(matches!(
+                map["number"],
+                ParamsValue::Number(Number(N::PosInt(42)))
+            ));
+            assert!(matches!(map["string"], ParamsValue::Convertible(ref s) if s == "hello"));
+            assert!(matches!(map["bool"], ParamsValue::Convertible(ref s) if s == "true"));
+            assert!(matches!(map["null"], ParamsValue::Null));
+
+            if let ParamsValue::Array(arr) = &map["array"] {
+                assert!(matches!(arr[0], ParamsValue::Number(Number(N::PosInt(1)))));
+                assert!(matches!(arr[1], ParamsValue::Convertible(ref s) if s == "two"));
+                assert!(matches!(arr[2], ParamsValue::Convertible(ref s) if s == "false"));
+            } else {
+                panic!("Expected array");
+            }
+
+            if let ParamsValue::Object(nested) = &map["nested"] {
+                assert!(matches!(
+                    nested["a"],
+                    ParamsValue::Number(Number(N::PosInt(1)))
+                ));
+                assert!(matches!(
+                    nested["b"],
+                    ParamsValue::Number(Number(N::PosInt(2)))
+                ));
+            } else {
+                panic!("Expected nested object");
+            }
+        } else {
+            panic!("Expected object");
+        }
     }
 }

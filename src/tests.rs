@@ -2,13 +2,14 @@ use std::collections::HashMap;
 
 use super::*;
 use ::serde::{Deserialize, Serialize};
-use axum::http::HeaderValue;
-use axum::Json;
 use axum::{
+    body::Body,
+    extract::{FromRequest, Request},
     http::StatusCode,
+    http::{self, HeaderValue},
     response::IntoResponse,
     routing::{get, post},
-    Router,
+    Json, Router,
 };
 use axum_test::{
     multipart::{MultipartForm, Part},
@@ -28,6 +29,13 @@ struct TestParams {
     name: String,
     #[serde(default)]
     extra: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct UploadFileResponse {
+    name: String,
+    content_type: String,
+    content: String,
 }
 
 #[axum::debug_handler]
@@ -92,13 +100,6 @@ struct CreatePostResponse {
     tags: Vec<String>,
     cover: UploadFileResponse,
     attachments: Vec<AttachmentResponse>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct UploadFileResponse {
-    name: String,
-    content_type: String,
-    content: String,
 }
 
 #[axum::debug_handler]
@@ -512,19 +513,19 @@ async fn test_nested_params_with_file_upload() {
     // Verify attachments
     assert_eq!(body.attachments.len(), 2);
 
-    // First attachment
-    assert_eq!(body.attachments[0].name, "First attachment");
-    assert_eq!(body.attachments[0].content_type, "text/plain");
+    let attachment1 = &body.attachments[0];
+    assert_eq!(attachment1.name, "First attachment");
+    assert_eq!(attachment1.content_type, "text/plain");
     assert_eq!(
-        body.attachments[0].content,
+        attachment1.content,
         String::from_utf8_lossy(attachment1_content)
     );
 
-    // Second attachment
-    assert_eq!(body.attachments[1].name, "Second attachment");
-    assert_eq!(body.attachments[1].content_type, "text/plain");
+    let attachment2 = &body.attachments[1];
+    assert_eq!(attachment2.name, "Second attachment");
+    assert_eq!(attachment2.content_type, "text/plain");
     assert_eq!(
-        body.attachments[1].content,
+        attachment2.content,
         String::from_utf8_lossy(attachment2_content)
     );
 }
@@ -897,4 +898,137 @@ async fn test_json_part() {
     assert_eq!(body.metadata.get("author").unwrap(), "test");
     assert_eq!(body.profile, Some("Test profile".to_string()));
     assert_eq!(body.avatar_size, 4);
+}
+
+#[derive(Debug, Deserialize)]
+struct TestNumbers {
+    pos_int: u64,
+    neg_int: i64,
+    float: f64,
+    zero: i64,
+    big_num: u64,
+    small_float: f64,
+    exp_num: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct TestMixed {
+    number: i64,
+    text: String,
+    boolean: bool,
+    opt_val: Option<String>,
+    numbers: Vec<f64>,
+    nested: TestNested,
+}
+
+#[derive(Debug, Deserialize)]
+struct TestNested {
+    id: u64,
+    name: String,
+}
+
+#[tokio::test]
+async fn test_json_numbers() {
+    setup();
+    let json = r#"{
+        "pos_int": 42,
+        "neg_int": -42,
+        "float": 42.5,
+        "zero": 0,
+        "big_num": 9007199254740991,
+        "small_float": 0.0000123,
+        "exp_num": 1.23e5
+    }"#;
+
+    let req = Request::builder()
+        .method(http::Method::POST)
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json))
+        .unwrap();
+
+    let params = Params::<TestNumbers>::from_request(req, &()).await.unwrap();
+    assert_eq!(params.0.pos_int, 42);
+    assert_eq!(params.0.neg_int, -42);
+    assert!((params.0.float - 42.5).abs() < f64::EPSILON);
+    assert_eq!(params.0.zero, 0);
+    assert_eq!(params.0.big_num, 9007199254740991);
+    assert!((params.0.small_float - 0.0000123).abs() < f64::EPSILON);
+    assert!((params.0.exp_num - 123000.0).abs() < f64::EPSILON);
+}
+
+#[tokio::test]
+async fn test_json_mixed_types() {
+    setup();
+    let json = r#"{
+        "number": 42,
+        "text": "hello world",
+        "boolean": true,
+        "opt_val": null,
+        "numbers": [1.1, 2.2, 3.3],
+        "nested": {
+            "id": 1,
+            "name": "test"
+        }
+    }"#;
+
+    let req = Request::builder()
+        .method(http::Method::POST)
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json))
+        .unwrap();
+
+    let params = Params::<TestMixed>::from_request(req, &()).await.unwrap();
+    assert_eq!(params.0.number, 42);
+    assert_eq!(params.0.text, "hello world");
+    assert!(params.0.boolean);
+    assert!(params.0.opt_val.is_none());
+    assert_eq!(params.0.numbers.len(), 3);
+    assert!((params.0.numbers[0] - 1.1).abs() < f64::EPSILON);
+    assert!((params.0.numbers[1] - 2.2).abs() < f64::EPSILON);
+    assert!((params.0.numbers[2] - 3.3).abs() < f64::EPSILON);
+    assert_eq!(params.0.nested.id, 1);
+    assert_eq!(params.0.nested.name, "test");
+}
+
+#[tokio::test]
+async fn test_form_urlencoded_numbers() {
+    setup();
+    let form_data = "pos_int=42&neg_int=-42&float=42.5&zero=0&big_num=9007199254740991&small_float=0.0000123&exp_num=123000";
+
+    let req = Request::builder()
+        .method(http::Method::POST)
+        .header(
+            http::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        )
+        .body(Body::from(form_data))
+        .unwrap();
+
+    let params = Params::<TestNumbers>::from_request(req, &()).await.unwrap();
+    assert_eq!(params.0.pos_int, 42);
+    assert_eq!(params.0.neg_int, -42);
+    assert!((params.0.float - 42.5).abs() < f64::EPSILON);
+    assert_eq!(params.0.zero, 0);
+    assert_eq!(params.0.big_num, 9007199254740991);
+    assert!((params.0.small_float - 0.0000123).abs() < f64::EPSILON);
+    assert!((params.0.exp_num - 123000.0).abs() < f64::EPSILON);
+}
+
+#[tokio::test]
+async fn test_query_params_numbers() {
+    setup();
+    let req = Request::builder()
+        .method(http::Method::GET)
+        .uri("/test?pos_int=42&neg_int=-42&float=42.5&zero=0&big_num=9007199254740991&small_float=0.0000123&exp_num=123000")
+        .body(Body::empty())
+        .unwrap();
+
+    let params = Params::<TestNumbers>::from_request(req, &()).await.unwrap();
+    assert_eq!(params.0.pos_int, 42);
+    assert_eq!(params.0.neg_int, -42);
+    assert!((params.0.float - 42.5).abs() < f64::EPSILON);
+    assert_eq!(params.0.zero, 0);
+    assert_eq!(params.0.big_num, 9007199254740991);
+    assert!((params.0.small_float - 0.0000123).abs() < f64::EPSILON);
+    assert!((params.0.exp_num - 123000.0).abs() < f64::EPSILON);
 }

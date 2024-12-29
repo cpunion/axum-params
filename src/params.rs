@@ -421,6 +421,5 @@ fn parse_key_parts(key: &str) -> Vec<String> {
         parts.push(current);
     }
 
-    debug!("Final parsed parts: {:?}", parts);
     parts
 }
