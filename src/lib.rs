@@ -1,19 +1,15 @@
-pub mod error;
-// mod form;
-// mod json;
-// mod multipart;
+mod error;
 mod params;
-// mod path;
 mod serde;
 #[cfg(test)]
 mod tests;
 mod traits;
+mod upload_file;
+mod value;
 
 pub use error::*;
-// pub use form::Form;
-// pub use json::Json;
-// pub use multipart::Multipart;
 pub use params::*;
-// pub use path::Path;
 pub use serde::*;
 pub use traits::*;
+pub use upload_file::*;
+pub use value::*;

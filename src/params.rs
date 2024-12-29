@@ -1,5 +1,6 @@
-use crate::Error;
-use ::serde::{de::DeserializeOwned, Deserialize};
+use crate::{merge_json, Error, ParamsValue, UploadFile};
+use ::serde::de::DeserializeOwned;
+use actson::feeder::SliceJsonFeeder;
 use axum::{
     async_trait,
     body::to_bytes,
@@ -7,59 +8,9 @@ use axum::{
     http::{self},
 };
 use log::debug;
-use serde::Serialize;
-use serde_json::Value;
 use std::collections::HashMap;
 use tempfile::NamedTempFile;
-use tokio::fs::File;
 use url::form_urlencoded;
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct UploadFile {
-    pub name: String,
-    pub content_type: String,
-    pub(crate) temp_file_path: String,
-}
-
-impl PartialEq for UploadFile {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.content_type == other.content_type
-    }
-}
-
-impl UploadFile {
-    pub async fn open(&self) -> Result<File, std::io::Error> {
-        File::open(&self.temp_file_path).await
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ParamsValue {
-    Object(HashMap<String, ParamsValue>),
-    Array(Vec<ParamsValue>),
-    Json(Value),
-    Convertable(String),
-    UploadFile(UploadFile),
-}
-
-impl PartialEq for ParamsValue {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Object(a), Self::Object(b)) => a == b,
-            (Self::Array(a), Self::Array(b)) => a == b,
-            (Self::Json(a), Self::Json(b)) => a == b,
-            (Self::Convertable(a), Self::Convertable(b)) => a == b,
-            (Self::UploadFile(a), Self::UploadFile(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-
-impl From<Value> for ParamsValue {
-    fn from(value: Value) -> Self {
-        ParamsValue::Json(value)
-    }
-}
 
 #[derive(Debug, Default)]
 pub struct Params<T>(pub T, pub Vec<NamedTempFile>);
@@ -95,7 +46,7 @@ where
                 merged
                     .entry(key)
                     .or_default()
-                    .push(ParamsValue::Convertable(value));
+                    .push(ParamsValue::Convertible(value));
             }
         }
 
@@ -113,7 +64,7 @@ where
                 merged
                     .entry(key)
                     .or_default()
-                    .push(ParamsValue::Convertable(value));
+                    .push(ParamsValue::Convertible(value));
             }
         }
 
@@ -133,16 +84,9 @@ where
                             debug!("Failed to read JSON request body: {}", e);
                             Error::DecodeError(format!("Failed to read JSON request body: {}", e))
                         })?;
-                        if let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(&bytes) {
-                            for (k, v) in map {
-                                merged.entry(k).or_default().push(ParamsValue::from(v));
-                            }
-                        } else {
-                            debug!(
-                                "Failed to parse JSON from request body: {:?}",
-                                String::from_utf8_lossy(&bytes)
-                            );
-                        }
+                        let feeder = SliceJsonFeeder::new(&bytes);
+                        merge_json(feeder, &mut merged)?;
+                        debug!("merged json: {:#?}", merged);
                     }
                     ct if ct.starts_with("application/x-www-form-urlencoded") => {
                         if !is_get_or_head {
@@ -167,7 +111,7 @@ where
                                     merged
                                         .entry(k)
                                         .or_default()
-                                        .push(ParamsValue::Convertable(v));
+                                        .push(ParamsValue::Convertible(v));
                                 }
                             }
                         }
@@ -182,14 +126,52 @@ where
 
                         while let Some(mut field) = multipart.next_field().await.map_err(|e| {
                             debug!("Failed to read multipart field: {}", e);
-                            Error::ReadError(format!("Failed to read multipart field: {e}"))
+                            Error::ReadError(format!("Failed to read multipart field: {e}",))
                         })? {
                             let content_type = field
                                 .content_type()
                                 .map(|ct| ct.to_string())
                                 .unwrap_or_else(|| "application/octet-stream".to_string());
                             if content_type == "application/json" {
-                                // TODO: parse JSON into merged
+                                let name = field.name().map(|s| s.to_string());
+                                let bytes = field.bytes().await.map_err(|e| {
+                                    debug!("Failed to read JSON field bytes: {}", e);
+                                    Error::ReadError(format!(
+                                        "Failed to read JSON field bytes: {e}"
+                                    ))
+                                })?;
+                                debug!(
+                                    "JSON field bytes: {}",
+                                    String::from_utf8(bytes.to_vec()).unwrap()
+                                );
+                                let feeder = SliceJsonFeeder::new(&bytes);
+                                let mut temp_map = HashMap::new();
+                                merge_json(feeder, &mut temp_map)?;
+                                debug!("Parsed JSON field: {:#?}", temp_map);
+                                let name = name.unwrap_or_default();
+                                if name.is_empty() {
+                                    // If no field name, clear all existing data and merge only the JSON data
+                                    for (key, values) in temp_map {
+                                        merged.insert(key, values);
+                                    }
+                                    debug!("Merged JSON field: {:#?}", merged);
+                                    continue;
+                                }
+
+                                // If we have a single value in the map with key "", use it as the value
+                                if let Some(values) = temp_map.get("") {
+                                    if values.len() == 1 {
+                                        merged.insert(name, values.clone());
+                                        continue;
+                                    }
+                                }
+
+                                // Otherwise, process the map as nested parameters
+                                let value = process_nested_params(temp_map);
+                                merged.insert(name, vec![value]);
+
+                                debug!("Merged JSON field: {:#?}", merged);
+                                continue;
                             }
                             if let Some(name) = field.name() {
                                 let name = name.to_string();
@@ -268,7 +250,7 @@ where
                                     merged
                                         .entry(name)
                                         .or_default()
-                                        .push(ParamsValue::Convertable(value));
+                                        .push(ParamsValue::Convertible(value));
                                 }
                             }
                         }
@@ -293,18 +275,37 @@ pub fn process_nested_params(grouped: HashMap<String, Vec<ParamsValue>>) -> Para
 
     // Process each group
     for (key, values) in grouped {
+        debug!("Processing key: {} with values: {:?}", key, values);
         let parts = parse_key_parts(&key);
+        debug!("Parsed parts: {:?}", parts);
         if parts.is_empty() {
+            continue;
+        }
+
+        // For single-part keys, directly add the value
+        if parts.len() == 1 {
+            let value = if values.len() == 1 {
+                values.into_iter().next().unwrap()
+            } else {
+                ParamsValue::Array(values)
+            };
+            debug!(
+                "Adding single-part key: {} with value: {:?}",
+                parts[0], value
+            );
+            result.insert(parts[0].clone(), value);
             continue;
         }
 
         // Get the value from insert_nested_values and store it in the result
         let value = insert_nested_values(&mut result, &parts, values);
         if parts.len() == 1 {
+            debug!("Adding nested key: {} with value: {:?}", parts[0], value);
             result.insert(parts[0].clone(), value);
         }
     }
 
+    debug!("Final result: {:?}", result);
     ParamsValue::Object(result)
 }
 
@@ -420,6 +421,5 @@ fn parse_key_parts(key: &str) -> Vec<String> {
         parts.push(current);
     }
 
-    debug!("Final parsed parts: {:?}", parts);
     parts
 }

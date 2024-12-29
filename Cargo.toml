@@ -9,21 +9,24 @@ keywords = ["axum", "params", "serde", "rails"]
 categories = ["web-programming"]
 
 [dependencies]
+actson = "1.1.0"
 async-trait = "0.1.83"
 axum = { version = "0.7.9", features = ["multipart", "macros"] }
 axum-macros = "0.4.2"
-log = "0.4.22"
-multer = "3.1.0"
+log = "0.4.20"
+mime = "0.3.17"
+multer = "3.0.0"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.134"
 serde_urlencoded = "0.7.1"
-tempfile = "3.14.0"
-tokio = { version = "1.42.0", features = ["fs", "io-util", "rt-multi-thread", "macros", "net"] }
+tempfile = "3.8.1"
+tokio = { version = "1.34.0", features = ["full"] }
 url = "2.5.4"
 
 [dev-dependencies]
 axum-test = "16.4.1"
-futures-util = "0.3.31"
+env_logger = "0.11.6"
+futures-util = "0.3.29"
+serde_json = "1.0.134"
 
 [[example]]
 name = "basic_params"

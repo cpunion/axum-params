@@ -1,9 +1,11 @@
+use crate::{Number, N};
+
 use super::ParamsValue;
+use log::debug;
 use serde::{
     de::{self, MapAccess, SeqAccess, Visitor},
     Deserialize, Deserializer,
 };
-use serde_json::Value;
 use std::collections::HashMap;
 
 struct ParamsValueVisitor;
@@ -16,36 +18,34 @@ impl<'de> Visitor<'de> for ParamsValueVisitor {
     }
 
     fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E> {
-        Ok(ParamsValue::Json(Value::Bool(v)))
+        Ok(ParamsValue::Bool(v))
     }
 
     fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E> {
-        Ok(ParamsValue::Json(Value::Number(v.into())))
+        Ok(ParamsValue::Number(Number::from(v)))
     }
 
     fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
-        Ok(ParamsValue::Json(Value::Number(v.into())))
+        Ok(ParamsValue::Number(Number::from(v)))
     }
 
     fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E> {
-        Ok(ParamsValue::Json(Value::Number(
-            serde_json::Number::from_f64(v).unwrap(),
-        )))
+        Ok(ParamsValue::Number(Number::from(v)))
     }
 
     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
-        Ok(ParamsValue::Convertable(v.to_owned()))
+        Ok(ParamsValue::Convertible(v.to_owned()))
     }
 
     fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
-        Ok(ParamsValue::Convertable(v))
+        Ok(ParamsValue::Convertible(v))
     }
 
     fn visit_none<E>(self) -> Result<Self::Value, E> {
-        Ok(ParamsValue::Json(Value::Null))
+        Ok(ParamsValue::Null)
     }
 
     fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -56,7 +56,7 @@ impl<'de> Visitor<'de> for ParamsValueVisitor {
     }
 
     fn visit_unit<E>(self) -> Result<Self::Value, E> {
-        Ok(ParamsValue::Json(Value::Null))
+        Ok(ParamsValue::Null)
     }
 
     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
@@ -158,67 +158,29 @@ impl<'de> Deserializer<'de> for ParamsValue {
         V: Visitor<'de>,
     {
         match self {
+            ParamsValue::Null => visitor.visit_unit(),
+            ParamsValue::Bool(b) => visitor.visit_bool(b),
+            ParamsValue::Number(Number(n)) => match n {
+                N::PosInt(i) => visitor.visit_u64(i),
+                N::NegInt(i) => visitor.visit_i64(i),
+                N::Float(f) => visitor.visit_f64(f),
+            },
+            ParamsValue::String(s) => visitor.visit_string(s),
             ParamsValue::Object(map) => visitor.visit_map(MapAccessor::new(map)),
             ParamsValue::Array(vec) => visitor.visit_seq(SeqAccessor {
                 seq: vec.into_iter(),
             }),
-            ParamsValue::Json(value) => match value {
-                Value::Null => visitor.visit_unit(),
-                Value::Bool(v) => visitor.visit_bool(v),
-                Value::Number(n) => {
-                    if let Some(i) = n.as_i64() {
-                        visitor.visit_i64(i)
-                    } else if let Some(u) = n.as_u64() {
-                        visitor.visit_u64(u)
-                    } else if let Some(f) = n.as_f64() {
-                        visitor.visit_f64(f)
-                    } else {
-                        Err(de::Error::custom("invalid number"))
-                    }
-                }
-                Value::String(s) => visitor.visit_string(s),
-                Value::Array(a) => visitor.visit_seq(SeqAccessor {
-                    seq: a
-                        .into_iter()
-                        .map(ParamsValue::Json)
-                        .collect::<Vec<_>>()
-                        .into_iter(),
-                }),
-                Value::Object(o) => visitor.visit_map(MapAccessor::new(
-                    o.into_iter()
-                        .map(|(k, v)| (k, ParamsValue::Json(v)))
-                        .collect(),
-                )),
-            },
-            ParamsValue::Convertable(s) => {
-                // Try to convert string to various types
-                if s == "true" {
-                    visitor.visit_bool(true)
-                } else if s == "false" {
-                    visitor.visit_bool(false)
-                } else if let Ok(i) = s.parse::<i64>() {
-                    visitor.visit_i64(i)
-                } else if let Ok(u) = s.parse::<u64>() {
-                    visitor.visit_u64(u)
-                } else if let Ok(f) = s.parse::<f64>() {
-                    visitor.visit_f64(f)
-                } else {
-                    visitor.visit_string(s)
-                }
-            }
+            ParamsValue::Convertible(s) => visitor.visit_string(s),
             ParamsValue::UploadFile(file) => {
                 let map = HashMap::from([
-                    (
-                        "name".to_string(),
-                        ParamsValue::Json(Value::String(file.name.clone())),
-                    ),
+                    ("name".to_string(), ParamsValue::String(file.name.clone())),
                     (
                         "content_type".to_string(),
-                        ParamsValue::Json(Value::String(file.content_type.clone())),
+                        ParamsValue::String(file.content_type.clone()),
                     ),
                     (
                         "temp_file_path".to_string(),
-                        ParamsValue::Json(Value::String(file.temp_file_path.to_string())),
+                        ParamsValue::String(file.temp_file_path.to_string()),
                     ),
                 ]);
                 visitor.visit_map(MapAccessor::new(map))
@@ -231,7 +193,7 @@ impl<'de> Deserializer<'de> for ParamsValue {
         V: Visitor<'de>,
     {
         match self {
-            ParamsValue::Convertable(s) => match s.to_lowercase().as_str() {
+            ParamsValue::Convertible(s) => match s.to_lowercase().as_str() {
                 "true" | "1" | "on" | "yes" => visitor.visit_bool(true),
                 "false" | "0" | "off" | "no" => visitor.visit_bool(false),
                 _ => Err(de::Error::custom("invalid boolean value")),
@@ -245,7 +207,7 @@ impl<'de> Deserializer<'de> for ParamsValue {
         V: Visitor<'de>,
     {
         match self {
-            ParamsValue::Convertable(s) => s
+            ParamsValue::Convertible(s) => s
                 .parse()
                 .map_err(de::Error::custom)
                 .and_then(|v| visitor.visit_i8(v)),
@@ -258,7 +220,7 @@ impl<'de> Deserializer<'de> for ParamsValue {
         V: Visitor<'de>,
     {
         match self {
-            ParamsValue::Convertable(s) => s
+            ParamsValue::Convertible(s) => s
                 .parse()
                 .map_err(de::Error::custom)
                 .and_then(|v| visitor.visit_i16(v)),
@@ -271,7 +233,7 @@ impl<'de> Deserializer<'de> for ParamsValue {
         V: Visitor<'de>,
     {
         match self {
-            ParamsValue::Convertable(s) => s
+            ParamsValue::Convertible(s) => s
                 .parse()
                 .map_err(de::Error::custom)
                 .and_then(|v| visitor.visit_i32(v)),
@@ -283,8 +245,9 @@ impl<'de> Deserializer<'de> for ParamsValue {
     where
         V: Visitor<'de>,
     {
+        debug!("deserialize_i64 self: {:?}", self);
         match self {
-            ParamsValue::Convertable(s) => s
+            ParamsValue::Convertible(s) => s
                 .parse()
                 .map_err(de::Error::custom)
                 .and_then(|v| visitor.visit_i64(v)),
@@ -297,7 +260,7 @@ impl<'de> Deserializer<'de> for ParamsValue {
         V: Visitor<'de>,
     {
         match self {
-            ParamsValue::Convertable(s) => s
+            ParamsValue::Convertible(s) => s
                 .parse()
                 .map_err(de::Error::custom)
                 .and_then(|v| visitor.visit_u8(v)),
@@ -310,7 +273,7 @@ impl<'de> Deserializer<'de> for ParamsValue {
         V: Visitor<'de>,
     {
         match self {
-            ParamsValue::Convertable(s) => s
+            ParamsValue::Convertible(s) => s
                 .parse()
                 .map_err(de::Error::custom)
                 .and_then(|v| visitor.visit_u16(v)),
@@ -323,7 +286,7 @@ impl<'de> Deserializer<'de> for ParamsValue {
         V: Visitor<'de>,
     {
         match self {
-            ParamsValue::Convertable(s) => s
+            ParamsValue::Convertible(s) => s
                 .parse()
                 .map_err(de::Error::custom)
                 .and_then(|v| visitor.visit_u32(v)),
@@ -336,7 +299,7 @@ impl<'de> Deserializer<'de> for ParamsValue {
         V: Visitor<'de>,
     {
         match self {
-            ParamsValue::Convertable(s) => s
+            ParamsValue::Convertible(s) => s
                 .parse()
                 .map_err(de::Error::custom)
                 .and_then(|v| visitor.visit_u64(v)),
@@ -348,8 +311,9 @@ impl<'de> Deserializer<'de> for ParamsValue {
     where
         V: Visitor<'de>,
     {
+        debug!("deserialize_f32 self: {:?}", self);
         match self {
-            ParamsValue::Convertable(s) => s
+            ParamsValue::Convertible(s) => s
                 .parse()
                 .map_err(de::Error::custom)
                 .and_then(|v| visitor.visit_f32(v)),
@@ -361,8 +325,9 @@ impl<'de> Deserializer<'de> for ParamsValue {
     where
         V: Visitor<'de>,
     {
+        debug!("deserialize_f64 self: {:?}", self);
         match self {
-            ParamsValue::Convertable(s) => s
+            ParamsValue::Convertible(s) => s
                 .parse()
                 .map_err(de::Error::custom)
                 .and_then(|v| visitor.visit_f64(v)),
@@ -375,7 +340,7 @@ impl<'de> Deserializer<'de> for ParamsValue {
         V: Visitor<'de>,
     {
         match self {
-            ParamsValue::Convertable(s) => {
+            ParamsValue::Convertible(s) => {
                 let mut chars = s.chars();
                 match (chars.next(), chars.next()) {
                     (Some(c), None) => visitor.visit_char(c),
@@ -391,7 +356,7 @@ impl<'de> Deserializer<'de> for ParamsValue {
         V: Visitor<'de>,
     {
         match self {
-            ParamsValue::Json(Value::Null) => visitor.visit_none(),
+            ParamsValue::Null => visitor.visit_none(),
             _ => visitor.visit_some(self),
         }
     }
