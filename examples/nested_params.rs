@@ -95,7 +95,7 @@ async fn main() {
 /*
 Test with curl:
 
-# Create post using the example source files
+# Create post using form fields
 curl -X POST http://localhost:3000/posts \
   -F "title=Rust Examples" \
   -F "content=Collection of axum-params examples" \
@@ -106,6 +106,28 @@ curl -X POST http://localhost:3000/posts \
   -F "attachments[0][file]=@examples/basic_params.rs" \
   -F "attachments[1][name]=File Upload" \
   -F "attachments[1][file]=@examples/file_upload.rs"
+
+# Or create post using JSON file for metadata and -F for files
+# First, create a temporary JSON file:
+cat > /tmp/post.json << 'EOF'
+{
+  "title": "Rust Examples",
+  "content": "Collection of axum-params examples",
+  "tags": ["rust", "axum"]
+}
+EOF
+
+# Then use the JSON file in the request
+curl -X POST http://localhost:3000/posts \
+  -F "=@/tmp/post.json;type=application/json" \
+  -F "cover=@examples/nested_params.rs" \
+  -F "attachments[0][name]=Basic Params" \
+  -F "attachments[0][file]=@examples/basic_params.rs" \
+  -F "attachments[1][name]=File Upload" \
+  -F "attachments[1][file]=@examples/file_upload.rs"
+
+# Clean up
+rm /tmp/post.json
 
 Expected response:
 {
