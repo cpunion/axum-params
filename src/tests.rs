@@ -18,6 +18,10 @@ use log::debug;
 use serde_json::json;
 use tokio::io::AsyncReadExt;
 
+pub fn setup() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}
+
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 struct TestParams {
     id: i32,
@@ -258,66 +262,66 @@ fn test_process_nested_params() {
     // Test simple key-value
     input.insert(
         "name".to_string(),
-        vec![ParamsValue::Convertable("john".to_string())],
+        vec![ParamsValue::Convertible("john".to_string())],
     );
 
     // Test nested object
     input.insert(
         "user[name]".to_string(),
-        vec![ParamsValue::Convertable("mary".to_string())],
+        vec![ParamsValue::Convertible("mary".to_string())],
     );
     input.insert(
         "user[age]".to_string(),
-        vec![ParamsValue::Convertable("25".to_string())],
+        vec![ParamsValue::Convertible("25".to_string())],
     );
     input.insert(
         "user[address][city]".to_string(),
-        vec![ParamsValue::Convertable("beijing".to_string())],
+        vec![ParamsValue::Convertible("beijing".to_string())],
     );
     input.insert(
         "user[address][country]".to_string(),
-        vec![ParamsValue::Convertable("china".to_string())],
+        vec![ParamsValue::Convertible("china".to_string())],
     );
 
     // Test array
     input.insert(
         "colors[]".to_string(),
         vec![
-            ParamsValue::Convertable("red".to_string()),
-            ParamsValue::Convertable("blue".to_string()),
+            ParamsValue::Convertible("red".to_string()),
+            ParamsValue::Convertible("blue".to_string()),
         ],
     );
 
     // Test indexed array
     input.insert(
         "numbers[0]".to_string(),
-        vec![ParamsValue::Convertable("1".to_string())],
+        vec![ParamsValue::Convertible("1".to_string())],
     );
     input.insert(
         "numbers[1]".to_string(),
-        vec![ParamsValue::Convertable("2".to_string())],
+        vec![ParamsValue::Convertible("2".to_string())],
     );
     input.insert(
         "numbers[2]".to_string(),
-        vec![ParamsValue::Convertable("3".to_string())],
+        vec![ParamsValue::Convertible("3".to_string())],
     );
 
     // Test array of objects
     input.insert(
         "users[0][name]".to_string(),
-        vec![ParamsValue::Convertable("john".to_string())],
+        vec![ParamsValue::Convertible("john".to_string())],
     );
     input.insert(
         "users[0][age]".to_string(),
-        vec![ParamsValue::Convertable("20".to_string())],
+        vec![ParamsValue::Convertible("20".to_string())],
     );
     input.insert(
         "users[1][name]".to_string(),
-        vec![ParamsValue::Convertable("mary".to_string())],
+        vec![ParamsValue::Convertible("mary".to_string())],
     );
     input.insert(
         "users[1][age]".to_string(),
-        vec![ParamsValue::Convertable("25".to_string())],
+        vec![ParamsValue::Convertible("25".to_string())],
     );
 
     let result = process_nested_params(input);
@@ -328,28 +332,28 @@ fn test_process_nested_params() {
         // Test simple key-value
         assert_eq!(
             map.get("name").unwrap(),
-            &ParamsValue::Convertable("john".to_string())
+            &ParamsValue::Convertible("john".to_string())
         );
 
         // Test nested object
         if let ParamsValue::Object(user) = map.get("user").unwrap() {
             assert_eq!(
                 user.get("name").unwrap(),
-                &ParamsValue::Convertable("mary".to_string())
+                &ParamsValue::Convertible("mary".to_string())
             );
             assert_eq!(
                 user.get("age").unwrap(),
-                &ParamsValue::Convertable("25".to_string())
+                &ParamsValue::Convertible("25".to_string())
             );
 
             if let ParamsValue::Object(address) = user.get("address").unwrap() {
                 assert_eq!(
                     address.get("city").unwrap(),
-                    &ParamsValue::Convertable("beijing".to_string())
+                    &ParamsValue::Convertible("beijing".to_string())
                 );
                 assert_eq!(
                     address.get("country").unwrap(),
-                    &ParamsValue::Convertable("china".to_string())
+                    &ParamsValue::Convertible("china".to_string())
                 );
             } else {
                 panic!("address should be an object");
@@ -361,8 +365,8 @@ fn test_process_nested_params() {
         // Test array
         if let ParamsValue::Array(colors) = map.get("colors").unwrap() {
             assert_eq!(colors.len(), 2);
-            assert_eq!(colors[0], ParamsValue::Convertable("red".to_string()));
-            assert_eq!(colors[1], ParamsValue::Convertable("blue".to_string()));
+            assert_eq!(colors[0], ParamsValue::Convertible("red".to_string()));
+            assert_eq!(colors[1], ParamsValue::Convertible("blue".to_string()));
         } else {
             panic!("colors should be an array");
         }
@@ -370,9 +374,9 @@ fn test_process_nested_params() {
         // Test indexed array
         if let ParamsValue::Array(numbers) = map.get("numbers").unwrap() {
             assert_eq!(numbers.len(), 3);
-            assert_eq!(numbers[0], ParamsValue::Convertable("1".to_string()));
-            assert_eq!(numbers[1], ParamsValue::Convertable("2".to_string()));
-            assert_eq!(numbers[2], ParamsValue::Convertable("3".to_string()));
+            assert_eq!(numbers[0], ParamsValue::Convertible("1".to_string()));
+            assert_eq!(numbers[1], ParamsValue::Convertible("2".to_string()));
+            assert_eq!(numbers[2], ParamsValue::Convertible("3".to_string()));
         } else {
             panic!("numbers should be an array");
         }
@@ -384,11 +388,11 @@ fn test_process_nested_params() {
             if let ParamsValue::Object(user0) = &users[0] {
                 assert_eq!(
                     user0.get("name").unwrap(),
-                    &ParamsValue::Convertable("john".to_string())
+                    &ParamsValue::Convertible("john".to_string())
                 );
                 assert_eq!(
                     user0.get("age").unwrap(),
-                    &ParamsValue::Convertable("20".to_string())
+                    &ParamsValue::Convertible("20".to_string())
                 );
             } else {
                 panic!("users[0] should be an object");
@@ -397,11 +401,11 @@ fn test_process_nested_params() {
             if let ParamsValue::Object(user1) = &users[1] {
                 assert_eq!(
                     user1.get("name").unwrap(),
-                    &ParamsValue::Convertable("mary".to_string())
+                    &ParamsValue::Convertible("mary".to_string())
                 );
                 assert_eq!(
                     user1.get("age").unwrap(),
-                    &ParamsValue::Convertable("25".to_string())
+                    &ParamsValue::Convertible("25".to_string())
                 );
             } else {
                 panic!("users[1] should be an object");
@@ -422,8 +426,8 @@ fn test_process_nested_with_empty_array() {
     input.insert(
         "colors[]".to_string(),
         vec![
-            ParamsValue::Convertable("red".to_string()),
-            ParamsValue::Convertable("blue".to_string()),
+            ParamsValue::Convertible("red".to_string()),
+            ParamsValue::Convertible("blue".to_string()),
         ],
     );
 
@@ -434,8 +438,8 @@ fn test_process_nested_with_empty_array() {
         // Test array
         if let ParamsValue::Array(colors) = map.get("colors").unwrap() {
             assert_eq!(colors.len(), 2);
-            assert_eq!(colors[0], ParamsValue::Convertable("red".to_string()));
-            assert_eq!(colors[1], ParamsValue::Convertable("blue".to_string()));
+            assert_eq!(colors[0], ParamsValue::Convertible("red".to_string()));
+            assert_eq!(colors[1], ParamsValue::Convertible("blue".to_string()));
         } else {
             panic!("colors should be an array");
         }
@@ -523,4 +527,374 @@ async fn test_nested_params_with_file_upload() {
         body.attachments[1].content,
         String::from_utf8_lossy(attachment2_content)
     );
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct MixedAttachment {
+    name: String,
+    description: String,
+    file: Option<UploadFile>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct MixedPostParams {
+    title: String,
+    content: String,
+    tags: Option<Vec<String>>,
+    attachments: Option<Vec<MixedAttachment>>,
+    author: Option<String>,
+    status: Option<String>,
+    metadata: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct MixedAttachmentResponse {
+    name: String,
+    description: String,
+    file_size: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct MixedPostResponse {
+    message: String,
+    title: String,
+    content: String,
+    tags: Vec<String>,
+    author: String,
+    status: String,
+    metadata: HashMap<String, String>,
+    attachments: Vec<MixedAttachmentResponse>,
+}
+
+#[tokio::test]
+async fn test_mixed_create_post() {
+    setup();
+    use tokio::io::AsyncReadExt;
+
+    let app = Router::new().route(
+        "/posts/:category",
+        post(|params: Params<MixedPostParams>| async move {
+            debug!("params: {:#?}", params);
+            let MixedPostParams {
+                title,
+                content,
+                tags,
+                attachments,
+                author,
+                status,
+                metadata,
+            } = params.0;
+
+            let mut response = MixedPostResponse {
+                message: "Success".to_string(),
+                title,
+                content,
+                tags: tags.unwrap_or_default(),
+                author: author.unwrap_or_default(),
+                status: status.unwrap_or_default(),
+                metadata: metadata.unwrap_or_default(),
+                attachments: Vec::new(),
+            };
+
+            if let Some(attachments) = attachments {
+                response.attachments =
+                    futures_util::future::join_all(attachments.into_iter().map(|a| async {
+                        let size = if let Some(file) = a.file {
+                            let mut f = file.open().await.unwrap();
+                            let mut content = Vec::new();
+                            f.read_to_end(&mut content).await.unwrap();
+                            content.len() as u64
+                        } else {
+                            0
+                        };
+
+                        MixedAttachmentResponse {
+                            name: a.name,
+                            description: a.description,
+                            file_size: size,
+                        }
+                    }))
+                    .await;
+            }
+
+            Ok::<Json<MixedPostResponse>, Error>(Json(response))
+        }),
+    );
+
+    let server = TestServer::new(app).unwrap();
+
+    // Prepare base post data in empty-named JSON part
+    let base_json = r#"{
+        "title": "Mixed Test Post",
+        "content": "This is a test post with mixed data sources",
+        "tags": ["rust", "axum", "test"]
+    }"#;
+
+    // Create multipart form with mixed data
+    let form = MultipartForm::new()
+        // Add base data as empty-named JSON part
+        .add_part("", Part::text(base_json).mime_type("application/json"))
+        // Add metadata fields individually
+        .add_part("metadata[version]", Part::text("2.0"))
+        .add_part("metadata[visibility]", Part::text("public"))
+        .add_part("metadata[created_at]", Part::text("2024-12-29"))
+        // Add first attachment with file and metadata
+        .add_part(
+            "attachments[0][file]",
+            Part::bytes(vec![1, 2, 3, 4])
+                .file_name("test1.bin")
+                .mime_type("application/octet-stream"),
+        )
+        .add_part("attachments[0][name]", Part::text("Test Attachment 1"))
+        .add_part(
+            "attachments[0][description]",
+            Part::text("First test attachment"),
+        )
+        // Add second attachment with file and metadata
+        .add_part(
+            "attachments[1][file]",
+            Part::bytes(vec![5, 6, 7, 8, 9])
+                .file_name("test2.bin")
+                .mime_type("application/octet-stream"),
+        )
+        .add_part("attachments[1][name]", Part::text("Test Attachment 2"))
+        .add_part(
+            "attachments[1][description]",
+            Part::text("Second test attachment"),
+        );
+
+    // Add headers for author and status
+    let response = server
+        .post("/posts/tech?author=test_user&status=draft")
+        .add_header(
+            axum::http::header::CONTENT_TYPE,
+            HeaderValue::from_static("multipart/form-data"),
+        )
+        .multipart(form)
+        .await;
+
+    debug!("Request URL: {}", response.request_url());
+    debug!("Request headers: {:?}", response.headers());
+    debug!("Response status: {}", response.status_code());
+    debug!(
+        "Response body: {}",
+        String::from_utf8_lossy(&response.as_bytes())
+    );
+
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let body: MixedPostResponse = response.json();
+
+    // Verify base data from empty-named JSON part
+    assert_eq!(body.title, "Mixed Test Post");
+    assert_eq!(body.content, "This is a test post with mixed data sources");
+    assert_eq!(body.tags, vec!["rust", "axum", "test"]);
+
+    // Verify data from query parameters
+    assert_eq!(body.author, "test_user");
+    assert_eq!(body.status, "draft");
+
+    // Verify metadata from named JSON part
+    assert_eq!(body.metadata.get("version").unwrap(), "2.0");
+    assert_eq!(body.metadata.get("visibility").unwrap(), "public");
+    assert_eq!(body.metadata.get("created_at").unwrap(), "2024-12-29");
+
+    // Verify attachments from multipart form
+    assert_eq!(body.attachments.len(), 2);
+
+    let attachment1 = &body.attachments[0];
+    assert_eq!(attachment1.name, "Test Attachment 1");
+    assert_eq!(attachment1.description, "First test attachment");
+    assert_eq!(attachment1.file_size, 4);
+
+    let attachment2 = &body.attachments[1];
+    assert_eq!(attachment2.name, "Test Attachment 2");
+    assert_eq!(attachment2.description, "Second test attachment");
+    assert_eq!(attachment2.file_size, 5);
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ComplexParams {
+    // Path params
+    user_id: i32,
+    // Query params
+    filter: String,
+    page: Option<i32>,
+    // JSON body
+    data: ComplexData,
+    // Multipart form
+    avatar: UploadFile,
+    profile: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ComplexData {
+    title: String,
+    tags: Vec<String>,
+    version_number: f64,
+    metadata: HashMap<String, String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ComplexResponse {
+    message: String,
+    user_id: i32,
+    filter: String,
+    page: Option<i32>,
+    title: String,
+    tags: Vec<String>,
+    version_number: f64,
+    metadata: HashMap<String, String>,
+    avatar_size: u64,
+    profile: Option<String>,
+}
+
+async fn complex_handler(
+    Params(params, _): Params<ComplexParams>,
+) -> Result<Json<ComplexResponse>, Error> {
+    let avatar_file = params
+        .avatar
+        .open()
+        .await
+        .map_err(|e| Error::ReadError(format!("Failed to open avatar file: {}", e)))?;
+    let avatar_size = avatar_file
+        .metadata()
+        .await
+        .map_err(|e| Error::ReadError(format!("Failed to get avatar metadata: {}", e)))?
+        .len();
+
+    Ok(Json(ComplexResponse {
+        message: "Success".to_string(),
+        user_id: params.user_id,
+        filter: params.filter,
+        page: params.page,
+        title: params.data.title,
+        tags: params.data.tags,
+        version_number: params.data.version_number,
+        metadata: params.data.metadata,
+        avatar_size,
+        profile: params.profile,
+    }))
+}
+
+#[tokio::test]
+async fn test_complex_params() {
+    setup();
+    let app = Router::new().route("/users/:user_id", post(complex_handler));
+    let server = TestServer::new(app).unwrap();
+
+    // Prepare multipart form data
+    let avatar_content = "avatar data".as_bytes();
+    let form = MultipartForm::new()
+        .add_part(
+            "avatar",
+            Part::bytes(avatar_content.to_vec())
+                .file_name("avatar.jpg")
+                .mime_type("image/jpeg"),
+        )
+        .add_text("profile", "Test profile")
+        .add_part(
+            "data",
+            Part::text(
+                r#"{
+            "title": "Test Post",
+            "tags": ["rust", "axum"],
+            "version_number": 1.0,
+            "metadata": {
+                "version": "1.0",
+                "author": "test"
+            }
+        }"#,
+            )
+            .mime_type("application/json"),
+        );
+
+    // Build the request with all parameter types
+    let user_id = 123;
+    let response = server
+        .post(&format!("/users/{}", user_id))
+        .add_query_param("filter", "active")
+        .add_query_param("page", "1")
+        .multipart(form)
+        .await;
+    debug!("Request URL: {}", response.request_url());
+    debug!("Request headers: {:?}", response.headers());
+    debug!("Response status: {}", response.status_code());
+    debug!(
+        "Response body: {}",
+        String::from_utf8_lossy(&response.as_bytes())
+    );
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let body: ComplexResponse = response.json();
+    assert_eq!(body.message, "Success");
+    assert_eq!(body.user_id, user_id);
+    assert_eq!(body.filter, "active");
+    assert_eq!(body.page, Some(1));
+    assert_eq!(body.title, "Test Post");
+    assert_eq!(body.tags, vec!["rust", "axum"]);
+    assert_eq!(body.metadata.get("version").unwrap(), "1.0");
+    assert_eq!(body.metadata.get("author").unwrap(), "test");
+    assert_eq!(body.avatar_size, avatar_content.len() as u64);
+    assert_eq!(body.profile, Some("Test profile".to_string()));
+}
+
+#[tokio::test]
+async fn test_json_part() {
+    setup();
+    let app = Router::new().route("/test", post(complex_handler));
+    let server = TestServer::new(app).unwrap();
+
+    // Prepare multipart form data with empty field name
+    let form = MultipartForm::new()
+        .add_part(
+            "",
+            Part::text(
+                r#"{
+                    "data": {
+                        "title": "Test Post",
+                        "tags": ["rust", "axum"],
+                        "version_number": 1.0,
+                        "metadata": {
+                            "version": "1.0",
+                            "author": "test"
+                        }
+                    },
+                    "profile": "Test profile",
+                    "filter": "active",
+                    "page": 1,
+                    "user_id": 123
+                }"#,
+            )
+            .mime_type("application/json"),
+        )
+        .add_part(
+            "avatar",
+            Part::bytes(vec![1, 2, 3, 4])
+                .file_name("test-avatar.bin")
+                .mime_type("application/octet-stream"),
+        );
+
+    let response = server.post("/test").multipart(form).await;
+    debug!("Request URL: {}", response.request_url());
+    debug!("Request headers: {:?}", response.headers());
+    debug!("Response status: {}", response.status_code());
+    debug!(
+        "Response body: {}",
+        String::from_utf8_lossy(&response.as_bytes())
+    );
+    assert_eq!(response.status_code(), StatusCode::OK);
+
+    let body: ComplexResponse = response.json();
+    assert_eq!(body.message, "Success");
+    assert_eq!(body.user_id, 123);
+    assert_eq!(body.filter, "active");
+    assert_eq!(body.page, Some(1));
+    assert_eq!(body.title, "Test Post");
+    assert_eq!(body.tags, vec!["rust", "axum"]);
+    assert_eq!(body.version_number, 1.0);
+    assert_eq!(body.metadata.get("version").unwrap(), "1.0");
+    assert_eq!(body.metadata.get("author").unwrap(), "test");
+    assert_eq!(body.profile, Some("Test profile".to_string()));
+    assert_eq!(body.avatar_size, 4);
 }

@@ -1,5 +1,9 @@
 use crate::Error;
 use ::serde::{de::DeserializeOwned, Deserialize};
+use actson::{
+    feeder::{JsonFeeder, SliceJsonFeeder},
+    JsonEvent, JsonParser,
+};
 use axum::{
     async_trait,
     body::to_bytes,
@@ -8,7 +12,6 @@ use axum::{
 };
 use log::debug;
 use serde::Serialize;
-use serde_json::Value;
 use std::collections::HashMap;
 use tempfile::NamedTempFile;
 use tokio::fs::File;
@@ -33,31 +36,65 @@ impl UploadFile {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) enum N {
+    PosInt(u64),
+    /// Always less than zero.
+    NegInt(i64),
+    /// Always finite.
+    Float(f64),
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Number(pub(crate) N);
+
+impl From<u64> for Number {
+    fn from(v: u64) -> Self {
+        Number(N::PosInt(v))
+    }
+}
+
+impl From<i64> for Number {
+    fn from(v: i64) -> Self {
+        if v >= 0 {
+            Number(N::PosInt(v as u64))
+        } else {
+            Number(N::NegInt(v))
+        }
+    }
+}
+
+impl From<f64> for Number {
+    fn from(v: f64) -> Self {
+        Number(N::Float(v))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ParamsValue {
+    Null,
+    Bool(bool),
+    Number(Number),
+    String(String),
+    Convertible(String),
     Object(HashMap<String, ParamsValue>),
     Array(Vec<ParamsValue>),
-    Json(Value),
-    Convertable(String),
     UploadFile(UploadFile),
 }
 
 impl PartialEq for ParamsValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::Null, Self::Null) => true,
+            (Self::Bool(a), Self::Bool(b)) => a == b,
+            (Self::Number(a), Self::Number(b)) => a == b,
+            (Self::String(a), Self::String(b)) => a == b,
             (Self::Object(a), Self::Object(b)) => a == b,
             (Self::Array(a), Self::Array(b)) => a == b,
-            (Self::Json(a), Self::Json(b)) => a == b,
-            (Self::Convertable(a), Self::Convertable(b)) => a == b,
+            (Self::Convertible(a), Self::Convertible(b)) => a == b,
             (Self::UploadFile(a), Self::UploadFile(b)) => a == b,
             _ => false,
         }
-    }
-}
-
-impl From<Value> for ParamsValue {
-    fn from(value: Value) -> Self {
-        ParamsValue::Json(value)
     }
 }
 
@@ -95,7 +132,7 @@ where
                 merged
                     .entry(key)
                     .or_default()
-                    .push(ParamsValue::Convertable(value));
+                    .push(ParamsValue::Convertible(value));
             }
         }
 
@@ -113,7 +150,7 @@ where
                 merged
                     .entry(key)
                     .or_default()
-                    .push(ParamsValue::Convertable(value));
+                    .push(ParamsValue::Convertible(value));
             }
         }
 
@@ -133,16 +170,9 @@ where
                             debug!("Failed to read JSON request body: {}", e);
                             Error::DecodeError(format!("Failed to read JSON request body: {}", e))
                         })?;
-                        if let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(&bytes) {
-                            for (k, v) in map {
-                                merged.entry(k).or_default().push(ParamsValue::from(v));
-                            }
-                        } else {
-                            debug!(
-                                "Failed to parse JSON from request body: {:?}",
-                                String::from_utf8_lossy(&bytes)
-                            );
-                        }
+                        let feeder = SliceJsonFeeder::new(&bytes);
+                        merge_json(feeder, &mut merged)?;
+                        debug!("merged json: {:#?}", merged);
                     }
                     ct if ct.starts_with("application/x-www-form-urlencoded") => {
                         if !is_get_or_head {
@@ -167,7 +197,7 @@ where
                                     merged
                                         .entry(k)
                                         .or_default()
-                                        .push(ParamsValue::Convertable(v));
+                                        .push(ParamsValue::Convertible(v));
                                 }
                             }
                         }
@@ -182,14 +212,52 @@ where
 
                         while let Some(mut field) = multipart.next_field().await.map_err(|e| {
                             debug!("Failed to read multipart field: {}", e);
-                            Error::ReadError(format!("Failed to read multipart field: {e}"))
+                            Error::ReadError(format!("Failed to read multipart field: {e}",))
                         })? {
                             let content_type = field
                                 .content_type()
                                 .map(|ct| ct.to_string())
                                 .unwrap_or_else(|| "application/octet-stream".to_string());
                             if content_type == "application/json" {
-                                // TODO: parse JSON into merged
+                                let name = field.name().map(|s| s.to_string());
+                                let bytes = field.bytes().await.map_err(|e| {
+                                    debug!("Failed to read JSON field bytes: {}", e);
+                                    Error::ReadError(format!(
+                                        "Failed to read JSON field bytes: {e}"
+                                    ))
+                                })?;
+                                debug!(
+                                    "JSON field bytes: {}",
+                                    String::from_utf8(bytes.to_vec()).unwrap()
+                                );
+                                let feeder = SliceJsonFeeder::new(&bytes);
+                                let mut temp_map = HashMap::new();
+                                merge_json(feeder, &mut temp_map)?;
+                                debug!("Parsed JSON field: {:#?}", temp_map);
+                                let name = name.unwrap_or_default();
+                                if name.is_empty() {
+                                    // If no field name, clear all existing data and merge only the JSON data
+                                    for (key, values) in temp_map {
+                                        merged.insert(key, values);
+                                    }
+                                    debug!("Merged JSON field: {:#?}", merged);
+                                    continue;
+                                }
+
+                                // If we have a single value in the map with key "", use it as the value
+                                if let Some(values) = temp_map.get("") {
+                                    if values.len() == 1 {
+                                        merged.insert(name, values.clone());
+                                        continue;
+                                    }
+                                }
+
+                                // Otherwise, process the map as nested parameters
+                                let value = process_nested_params(temp_map);
+                                merged.insert(name, vec![value]);
+
+                                debug!("Merged JSON field: {:#?}", merged);
+                                continue;
                             }
                             if let Some(name) = field.name() {
                                 let name = name.to_string();
@@ -268,7 +336,7 @@ where
                                     merged
                                         .entry(name)
                                         .or_default()
-                                        .push(ParamsValue::Convertable(value));
+                                        .push(ParamsValue::Convertible(value));
                                 }
                             }
                         }
@@ -287,24 +355,177 @@ where
     }
 }
 
+fn event_to_params_value<T: JsonFeeder>(event: &JsonEvent, parser: &JsonParser<T>) -> ParamsValue {
+    match event {
+        JsonEvent::ValueString => {
+            ParamsValue::Convertible(parser.current_str().unwrap().to_string())
+        }
+        JsonEvent::ValueInt => ParamsValue::Number(Number::from(
+            parser.current_str().unwrap().parse::<i64>().unwrap(),
+        )),
+        JsonEvent::ValueFloat => ParamsValue::Number(Number::from(
+            parser.current_str().unwrap().parse::<f64>().unwrap(),
+        )),
+        JsonEvent::ValueTrue => ParamsValue::Convertible("true".to_string()),
+        JsonEvent::ValueFalse => ParamsValue::Convertible("false".to_string()),
+        JsonEvent::ValueNull => ParamsValue::Null,
+        _ => unreachable!(),
+    }
+}
+
+pub fn parse_json(feeder: SliceJsonFeeder) -> Result<ParamsValue, JsonError> {
+    let mut parser = JsonParser::new(feeder);
+
+    let mut stack = vec![];
+    let mut result = None;
+    let mut current_key = None;
+
+    while let Some(event) = parser.next_event().unwrap() {
+        debug!("JSON event: {:?}", event);
+        match event {
+            JsonEvent::NeedMoreInput => {}
+
+            JsonEvent::StartObject | JsonEvent::StartArray => {
+                let v = if event == JsonEvent::StartObject {
+                    ParamsValue::Object(HashMap::new())
+                } else {
+                    ParamsValue::Array(vec![])
+                };
+                stack.push((current_key.take(), v));
+            }
+
+            JsonEvent::EndObject | JsonEvent::EndArray => {
+                let v = stack.pop().unwrap();
+                if let Some((_, top)) = stack.last_mut() {
+                    match top {
+                        ParamsValue::Object(o) => {
+                            if let Some(key) = v.0 {
+                                o.insert(key, v.1);
+                            }
+                        }
+                        ParamsValue::Array(a) => {
+                            a.push(v.1);
+                        }
+                        _ => return Err(JsonError::SyntaxError),
+                    }
+                } else {
+                    result = Some(v.1);
+                }
+            }
+
+            JsonEvent::FieldName => {
+                let str_result = parser.current_str().map_err(|_| JsonError::SyntaxError)?;
+                current_key = Some(str_result.to_string());
+            }
+
+            JsonEvent::ValueString
+            | JsonEvent::ValueInt
+            | JsonEvent::ValueFloat
+            | JsonEvent::ValueTrue
+            | JsonEvent::ValueFalse
+            | JsonEvent::ValueNull => {
+                let v = event_to_params_value(&event, &parser);
+                if let Some((_, top)) = stack.last_mut() {
+                    match top {
+                        ParamsValue::Array(a) => {
+                            a.push(v);
+                        }
+                        ParamsValue::Object(o) => {
+                            if let Some(key) = current_key.take() {
+                                o.insert(key, v);
+                            } else {
+                                return Err(JsonError::SyntaxError);
+                            }
+                        }
+                        _ => {
+                            return Err(JsonError::SyntaxError);
+                        }
+                    }
+                } else if result.is_none() {
+                    result = Some(v);
+                } else {
+                    return Err(JsonError::SyntaxError);
+                }
+            }
+        }
+    }
+
+    result.ok_or(JsonError::NoMoreInput)
+}
+
+pub enum JsonError {
+    SyntaxError,
+    NoMoreInput,
+    Other(String),
+}
+
+impl From<JsonError> for Error {
+    fn from(err: JsonError) -> Self {
+        match err {
+            JsonError::SyntaxError => Error::DecodeError("JSON syntax error".to_string()),
+            JsonError::NoMoreInput => Error::DecodeError("Incomplete JSON input".to_string()),
+            JsonError::Other(msg) => Error::DecodeError(msg),
+        }
+    }
+}
+
+pub fn merge_json(
+    feeder: SliceJsonFeeder,
+    merged: &mut HashMap<String, Vec<ParamsValue>>,
+) -> Result<(), JsonError> {
+    let value = parse_json(feeder)?;
+    debug!("Parsed JSON value: {:#?}", value);
+    match value {
+        ParamsValue::Object(obj) => {
+            for (key, value) in obj {
+                merged.insert(key, vec![value]);
+            }
+        }
+        _ => {
+            merged.insert("".to_string(), vec![value]);
+        }
+    }
+    debug!("Final merged map: {:#?}", merged);
+    Ok(())
+}
+
 pub fn process_nested_params(grouped: HashMap<String, Vec<ParamsValue>>) -> ParamsValue {
     debug!("Starting process_nested_params with input: {:?}", grouped);
     let mut result = HashMap::new();
 
     // Process each group
     for (key, values) in grouped {
+        debug!("Processing key: {} with values: {:?}", key, values);
         let parts = parse_key_parts(&key);
+        debug!("Parsed parts: {:?}", parts);
         if parts.is_empty() {
+            continue;
+        }
+
+        // For single-part keys, directly add the value
+        if parts.len() == 1 {
+            let value = if values.len() == 1 {
+                values.into_iter().next().unwrap()
+            } else {
+                ParamsValue::Array(values)
+            };
+            debug!(
+                "Adding single-part key: {} with value: {:?}",
+                parts[0], value
+            );
+            result.insert(parts[0].clone(), value);
             continue;
         }
 
         // Get the value from insert_nested_values and store it in the result
         let value = insert_nested_values(&mut result, &parts, values);
         if parts.len() == 1 {
+            debug!("Adding nested key: {} with value: {:?}", parts[0], value);
             result.insert(parts[0].clone(), value);
         }
     }
 
+    debug!("Final result: {:?}", result);
     ParamsValue::Object(result)
 }
 
