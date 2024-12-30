@@ -1,4 +1,4 @@
-use crate::{merge_json, Error, ParamsValue, UploadFile};
+use crate::{parse_json, Error, QueryParser, UploadFile, Value};
 use ::serde::de::DeserializeOwned;
 use actson::feeder::SliceJsonFeeder;
 use axum::{
@@ -10,7 +10,6 @@ use axum::{
 use log::debug;
 use std::collections::HashMap;
 use tempfile::NamedTempFile;
-use url::form_urlencoded;
 
 #[derive(Debug, Default)]
 pub struct Params<T>(pub T, pub Vec<NamedTempFile>);
@@ -28,47 +27,38 @@ where
             req.method() == http::Method::GET || req.method() == http::Method::HEAD;
         let (mut parts, body) = req.into_parts();
 
-        // Start with empty vec to preserve multiple values for the same key
-        let mut merged: HashMap<String, Vec<ParamsValue>> = HashMap::new();
+        let parser = QueryParser::new(None);
+        let mut merged_params = HashMap::new();
 
         // Extract path parameters
         if let Ok(Path(params)) =
             Path::<HashMap<String, String>>::from_request_parts(&mut parts, state).await
         {
             debug!("params: {:?}", params);
+
             for (key, value) in params {
-                // Remove query string from path parameter if present
-                let value = if let Some(pos) = value.find('?') {
-                    value[..pos].to_string()
-                } else {
-                    value
-                };
-                merged
-                    .entry(key)
-                    .or_default()
-                    .push(ParamsValue::Convertible(value));
+                parser
+                    .parse_nested_value(&mut merged_params, key.as_str(), Value::xstr(value))
+                    .map_err(|e| {
+                        Error::DecodeError(format!("Failed to parse path parameters: {}", e))
+                    })?;
             }
         }
 
-        debug!("merged path params: {:?}", merged);
+        debug!("merged path params: {:?}", merged_params);
         debug!("parts.uri: {:?}", parts.uri);
         debug!("parts.uri.query(): {:?}", parts.uri.query());
 
         // Extract query parameters from URI
         if let Some(query) = parts.uri.query() {
-            let params: Vec<_> = form_urlencoded::parse(query.as_bytes())
-                .into_owned()
-                .collect();
-            debug!("query params: {:?}", params);
-            for (key, value) in params {
-                merged
-                    .entry(key)
-                    .or_default()
-                    .push(ParamsValue::Convertible(value));
-            }
+            parser
+                .parse_nested_query_into(&mut merged_params, query)
+                .map_err(|e| {
+                    Error::DecodeError(format!("Failed to parse query parameters: {}", e))
+                })?;
         }
 
-        debug!("merged query params: {:?}", merged);
+        debug!("merged query params: {:?}", merged_params);
 
         let mut temp_files = Vec::new();
         debug!(
@@ -85,8 +75,13 @@ where
                             Error::DecodeError(format!("Failed to read JSON request body: {}", e))
                         })?;
                         let feeder = SliceJsonFeeder::new(&bytes);
-                        merge_json(feeder, &mut merged)?;
-                        debug!("merged json: {:#?}", merged);
+                        let value = parse_json(feeder)?;
+                        debug!("parsed json: {:#?}", value);
+                        merged_params = value.merge_into(merged_params).map_err(|e| {
+                            debug!("Failed to merge JSON data: {e:?}");
+                            Error::DecodeError(format!("Failed to merge JSON data: {e:?}"))
+                        })?;
+                        debug!("merged json: {:#?}", merged_params);
                     }
                     ct if ct.starts_with("application/x-www-form-urlencoded") => {
                         if !is_get_or_head {
@@ -95,25 +90,17 @@ where
                                     "Failed to read form-urlencoded request body: {e}"
                                 ))
                             })?;
-                            if let Ok(map) =
-                                serde_urlencoded::from_bytes::<HashMap<String, String>>(&bytes)
-                                    .map_err(|err| -> Error {
-                                        debug!(
-                                            "Failed to deserialize form-urlencoded data: {}",
-                                            err
-                                        );
-                                        Error::DecodeError(format!(
-                                            "Failed to deserialize form: {err}",
-                                        ))
-                                    })
-                            {
-                                for (k, v) in map {
-                                    merged
-                                        .entry(k)
-                                        .or_default()
-                                        .push(ParamsValue::Convertible(v));
-                                }
-                            }
+                            parser
+                                .parse_nested_query_into(
+                                    &mut merged_params,
+                                    String::from_utf8_lossy(&bytes).as_ref(),
+                                )
+                                .map_err(|e| {
+                                    Error::DecodeError(format!(
+                                        "Failed to parse form-urlencoded body: {}",
+                                        e
+                                    ))
+                                })?
                         }
                     }
                     ct if ct.starts_with("multipart/form-data") => {
@@ -137,7 +124,7 @@ where
                                 let bytes = field.bytes().await.map_err(|e| {
                                     debug!("Failed to read JSON field bytes: {}", e);
                                     Error::ReadError(format!(
-                                        "Failed to read JSON field bytes: {e}"
+                                        "Failed to read JSON field bytes: {e}",
                                     ))
                                 })?;
                                 debug!(
@@ -145,32 +132,33 @@ where
                                     String::from_utf8(bytes.to_vec()).unwrap()
                                 );
                                 let feeder = SliceJsonFeeder::new(&bytes);
-                                let mut temp_map = HashMap::new();
-                                merge_json(feeder, &mut temp_map)?;
-                                debug!("Parsed JSON field: {:#?}", temp_map);
+                                let value = parse_json(feeder)?;
+                                debug!("Parsed JSON field: {:#?}", value);
                                 let name = name.unwrap_or_default();
                                 if name.is_empty() {
-                                    // If no field name, clear all existing data and merge only the JSON data
-                                    for (key, values) in temp_map {
-                                        merged.insert(key, values);
-                                    }
-                                    debug!("Merged JSON field: {:#?}", merged);
-                                    continue;
+                                    merged_params =
+                                        value.merge_into(merged_params).map_err(|e| {
+                                            debug!("Failed to merge JSON field: {e:?}");
+                                            Error::DecodeError(format!(
+                                                "Failed to merge JSON field: {e:?}",
+                                            ))
+                                        })?;
+                                } else {
+                                    parser
+                                        .parse_nested_value(
+                                            &mut merged_params,
+                                            name.as_str(),
+                                            value,
+                                        )
+                                        .map_err(|e| {
+                                            Error::DecodeError(format!(
+                                                "Failed to parse JSON field: {}",
+                                                e
+                                            ))
+                                        })?;
                                 }
 
-                                // If we have a single value in the map with key "", use it as the value
-                                if let Some(values) = temp_map.get("") {
-                                    if values.len() == 1 {
-                                        merged.insert(name, values.clone());
-                                        continue;
-                                    }
-                                }
-
-                                // Otherwise, process the map as nested parameters
-                                let value = process_nested_params(temp_map);
-                                merged.insert(name, vec![value]);
-
-                                debug!("Merged JSON field: {:#?}", merged);
+                                debug!("Merged JSON field: {:#?}", merged_params);
                                 continue;
                             }
                             if let Some(name) = field.name() {
@@ -222,22 +210,27 @@ where
 
                                     debug!("Total bytes written to file: {}", total_bytes);
 
-                                    merged
-                                        .entry(name)
-                                        .or_default()
-                                        .push(ParamsValue::UploadFile(UploadFile {
-                                            name: field.file_name().unwrap().to_string(),
-                                            content_type: field
-                                                .content_type()
-                                                .map(|ct| ct.to_string())
-                                                .unwrap_or_else(|| {
-                                                    "application/octet-stream".to_string()
-                                                }),
-                                            temp_file_path: temp_file
-                                                .path()
-                                                .to_string_lossy()
-                                                .to_string(),
-                                        }));
+                                    let file = Value::UploadFile(UploadFile {
+                                        name: field.file_name().unwrap().to_string(),
+                                        content_type: field
+                                            .content_type()
+                                            .map(|ct| ct.to_string())
+                                            .unwrap_or_else(|| {
+                                                "application/octet-stream".to_string()
+                                            }),
+                                        temp_file_path: temp_file
+                                            .path()
+                                            .to_string_lossy()
+                                            .to_string(),
+                                    });
+                                    parser
+                                        .parse_nested_value(&mut merged_params, name.as_str(), file)
+                                        .map_err(|e| {
+                                            Error::DecodeError(format!(
+                                                "Failed to parse file upload field: {}",
+                                                e
+                                            ))
+                                        })?;
 
                                     // Store the temp file
                                     temp_files.push(temp_file);
@@ -247,10 +240,18 @@ where
                                         debug!("Failed to read text field: {}", e);
                                         Error::ReadError(format!("Failed to read text field: {e}",))
                                     })?;
-                                    merged
-                                        .entry(name)
-                                        .or_default()
-                                        .push(ParamsValue::Convertible(value));
+                                    parser
+                                        .parse_nested_value(
+                                            &mut merged_params,
+                                            name.as_str(),
+                                            Value::xstr(value),
+                                        )
+                                        .map_err(|e| {
+                                            Error::DecodeError(format!(
+                                                "Failed to parse text field: {}",
+                                                e
+                                            ))
+                                        })?;
                                 }
                             }
                         }
@@ -261,165 +262,10 @@ where
                 }
             }
         }
-        let merged = process_nested_params(merged);
-        debug!("merged: {:?}", merged);
-        T::deserialize(merged)
+
+        debug!("merged: {:?}", merged_params);
+        T::deserialize(Value::Object(merged_params))
             .map_err(|e| Error::DecodeError(format!("Failed to deserialize parameters: {e}")))
             .map(|payload| Params(payload, temp_files))
     }
-}
-
-pub fn process_nested_params(grouped: HashMap<String, Vec<ParamsValue>>) -> ParamsValue {
-    debug!("Starting process_nested_params with input: {:?}", grouped);
-    let mut result = HashMap::new();
-
-    // Process each group
-    for (key, values) in grouped {
-        debug!("Processing key: {} with values: {:?}", key, values);
-        let parts = parse_key_parts(&key);
-        debug!("Parsed parts: {:?}", parts);
-        if parts.is_empty() {
-            continue;
-        }
-
-        // For single-part keys, directly add the value
-        if parts.len() == 1 {
-            let value = if values.len() == 1 {
-                values.into_iter().next().unwrap()
-            } else {
-                ParamsValue::Array(values)
-            };
-            debug!(
-                "Adding single-part key: {} with value: {:?}",
-                parts[0], value
-            );
-            result.insert(parts[0].clone(), value);
-            continue;
-        }
-
-        // Get the value from insert_nested_values and store it in the result
-        let value = insert_nested_values(&mut result, &parts, values);
-        if parts.len() == 1 {
-            debug!("Adding nested key: {} with value: {:?}", parts[0], value);
-            result.insert(parts[0].clone(), value);
-        }
-    }
-
-    debug!("Final result: {:?}", result);
-    ParamsValue::Object(result)
-}
-
-fn insert_nested_values(
-    map: &mut HashMap<String, ParamsValue>,
-    parts: &[String],
-    values: Vec<ParamsValue>,
-) -> ParamsValue {
-    if parts.is_empty() {
-        return values
-            .into_iter()
-            .next()
-            .unwrap_or_else(|| ParamsValue::Object(HashMap::new()));
-    }
-
-    let key = &parts[0];
-    if parts.len() == 1 {
-        let value = if values.len() == 1 {
-            values.into_iter().next().unwrap()
-        } else {
-            ParamsValue::Array(values)
-        };
-        return value;
-    }
-
-    // Check if next part indicates an array
-    let is_array = parts
-        .get(1)
-        .map(|p| p.is_empty() || p.parse::<usize>().is_ok())
-        .unwrap_or(false);
-
-    let entry = map.entry(key.clone()).or_insert_with(|| {
-        if is_array {
-            ParamsValue::Array(Vec::new())
-        } else {
-            ParamsValue::Object(HashMap::new())
-        }
-    });
-
-    match entry {
-        ParamsValue::Object(nested_map) => {
-            let value = insert_nested_values(nested_map, &parts[1..], values);
-            if parts.len() == 2 {
-                nested_map.insert(parts[1].clone(), value.clone());
-            }
-            ParamsValue::Object(nested_map.clone())
-        }
-        ParamsValue::Array(vec) => {
-            if parts.get(1).map(|p| p.is_empty()).unwrap_or(false) {
-                vec.extend(values);
-            } else if let Some(Ok(index)) = parts.get(1).map(|p| p.parse::<usize>()) {
-                while vec.len() <= index {
-                    vec.push(ParamsValue::Object(HashMap::new()));
-                }
-
-                if parts.len() == 2 {
-                    if let Some(value) = values.into_iter().next() {
-                        vec[index] = value;
-                    }
-                } else if let ParamsValue::Object(nested_map) = &mut vec[index] {
-                    let value = insert_nested_values(nested_map, &parts[2..], values);
-                    if parts.len() == 3 {
-                        nested_map.insert(parts[2].clone(), value);
-                    }
-                }
-            }
-            ParamsValue::Array(vec.clone())
-        }
-        _ => values
-            .into_iter()
-            .next()
-            .unwrap_or_else(|| ParamsValue::Object(HashMap::new())),
-    }
-}
-
-fn parse_key_parts(key: &str) -> Vec<String> {
-    debug!("Parsing key parts for: {}", key);
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut in_brackets = false;
-
-    for c in key.chars() {
-        match c {
-            '[' => {
-                if !current.is_empty() {
-                    debug!("Adding part before bracket: {}", current);
-                    parts.push(current.clone());
-                    current.clear();
-                }
-                in_brackets = true;
-            }
-            ']' => {
-                if in_brackets {
-                    if current.is_empty() {
-                        debug!("Found empty brackets");
-                        parts.push(String::new());
-                    } else {
-                        debug!("Adding part from bracket: {}", current);
-                        parts.push(current.clone());
-                    }
-                    current.clear();
-                }
-                in_brackets = false;
-            }
-            _ => {
-                current.push(c);
-            }
-        }
-    }
-
-    if !current.is_empty() {
-        debug!("Adding remaining part: {}", current);
-        parts.push(current);
-    }
-
-    parts
 }

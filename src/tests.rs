@@ -256,199 +256,6 @@ async fn test_combined_params() {
     assert_eq!(params.extra, Some("query_param".to_string()));
 }
 
-#[test]
-fn test_process_nested_params() {
-    let mut input = HashMap::new();
-
-    // Test simple key-value
-    input.insert(
-        "name".to_string(),
-        vec![ParamsValue::Convertible("john".to_string())],
-    );
-
-    // Test nested object
-    input.insert(
-        "user[name]".to_string(),
-        vec![ParamsValue::Convertible("mary".to_string())],
-    );
-    input.insert(
-        "user[age]".to_string(),
-        vec![ParamsValue::Convertible("25".to_string())],
-    );
-    input.insert(
-        "user[address][city]".to_string(),
-        vec![ParamsValue::Convertible("beijing".to_string())],
-    );
-    input.insert(
-        "user[address][country]".to_string(),
-        vec![ParamsValue::Convertible("china".to_string())],
-    );
-
-    // Test array
-    input.insert(
-        "colors[]".to_string(),
-        vec![
-            ParamsValue::Convertible("red".to_string()),
-            ParamsValue::Convertible("blue".to_string()),
-        ],
-    );
-
-    // Test indexed array
-    input.insert(
-        "numbers[0]".to_string(),
-        vec![ParamsValue::Convertible("1".to_string())],
-    );
-    input.insert(
-        "numbers[1]".to_string(),
-        vec![ParamsValue::Convertible("2".to_string())],
-    );
-    input.insert(
-        "numbers[2]".to_string(),
-        vec![ParamsValue::Convertible("3".to_string())],
-    );
-
-    // Test array of objects
-    input.insert(
-        "users[0][name]".to_string(),
-        vec![ParamsValue::Convertible("john".to_string())],
-    );
-    input.insert(
-        "users[0][age]".to_string(),
-        vec![ParamsValue::Convertible("20".to_string())],
-    );
-    input.insert(
-        "users[1][name]".to_string(),
-        vec![ParamsValue::Convertible("mary".to_string())],
-    );
-    input.insert(
-        "users[1][age]".to_string(),
-        vec![ParamsValue::Convertible("25".to_string())],
-    );
-
-    let result = process_nested_params(input);
-    debug!("result: {:?}", result);
-
-    // Verify the result
-    if let ParamsValue::Object(map) = result {
-        // Test simple key-value
-        assert_eq!(
-            map.get("name").unwrap(),
-            &ParamsValue::Convertible("john".to_string())
-        );
-
-        // Test nested object
-        if let ParamsValue::Object(user) = map.get("user").unwrap() {
-            assert_eq!(
-                user.get("name").unwrap(),
-                &ParamsValue::Convertible("mary".to_string())
-            );
-            assert_eq!(
-                user.get("age").unwrap(),
-                &ParamsValue::Convertible("25".to_string())
-            );
-
-            if let ParamsValue::Object(address) = user.get("address").unwrap() {
-                assert_eq!(
-                    address.get("city").unwrap(),
-                    &ParamsValue::Convertible("beijing".to_string())
-                );
-                assert_eq!(
-                    address.get("country").unwrap(),
-                    &ParamsValue::Convertible("china".to_string())
-                );
-            } else {
-                panic!("address should be an object");
-            }
-        } else {
-            panic!("user should be an object");
-        }
-
-        // Test array
-        if let ParamsValue::Array(colors) = map.get("colors").unwrap() {
-            assert_eq!(colors.len(), 2);
-            assert_eq!(colors[0], ParamsValue::Convertible("red".to_string()));
-            assert_eq!(colors[1], ParamsValue::Convertible("blue".to_string()));
-        } else {
-            panic!("colors should be an array");
-        }
-
-        // Test indexed array
-        if let ParamsValue::Array(numbers) = map.get("numbers").unwrap() {
-            assert_eq!(numbers.len(), 3);
-            assert_eq!(numbers[0], ParamsValue::Convertible("1".to_string()));
-            assert_eq!(numbers[1], ParamsValue::Convertible("2".to_string()));
-            assert_eq!(numbers[2], ParamsValue::Convertible("3".to_string()));
-        } else {
-            panic!("numbers should be an array");
-        }
-
-        // Test array of objects
-        if let ParamsValue::Array(users) = map.get("users").unwrap() {
-            assert_eq!(users.len(), 2);
-
-            if let ParamsValue::Object(user0) = &users[0] {
-                assert_eq!(
-                    user0.get("name").unwrap(),
-                    &ParamsValue::Convertible("john".to_string())
-                );
-                assert_eq!(
-                    user0.get("age").unwrap(),
-                    &ParamsValue::Convertible("20".to_string())
-                );
-            } else {
-                panic!("users[0] should be an object");
-            }
-
-            if let ParamsValue::Object(user1) = &users[1] {
-                assert_eq!(
-                    user1.get("name").unwrap(),
-                    &ParamsValue::Convertible("mary".to_string())
-                );
-                assert_eq!(
-                    user1.get("age").unwrap(),
-                    &ParamsValue::Convertible("25".to_string())
-                );
-            } else {
-                panic!("users[1] should be an object");
-            }
-        } else {
-            panic!("users should be an array");
-        }
-    } else {
-        panic!("result should be an object");
-    }
-}
-
-#[test]
-fn test_process_nested_with_empty_array() {
-    let mut input = HashMap::new();
-
-    // Test array with empty values
-    input.insert(
-        "colors[]".to_string(),
-        vec![
-            ParamsValue::Convertible("red".to_string()),
-            ParamsValue::Convertible("blue".to_string()),
-        ],
-    );
-
-    let result = process_nested_params(input);
-
-    // Verify the result
-    if let ParamsValue::Object(map) = result {
-        // Test array
-        if let ParamsValue::Array(colors) = map.get("colors").unwrap() {
-            assert_eq!(colors.len(), 2);
-            assert_eq!(colors[0], ParamsValue::Convertible("red".to_string()));
-            assert_eq!(colors[1], ParamsValue::Convertible("blue".to_string()));
-        } else {
-            panic!("colors should be an array");
-        }
-    } else {
-        panic!("result should be an object");
-    }
-}
-
 #[tokio::test]
 async fn test_nested_params_with_file_upload() {
     let app = Router::new().route("/api/posts", post(test_nested_params_handler));
@@ -479,16 +286,16 @@ async fn test_nested_params_with_file_upload() {
                         .file_name("cover.jpg")
                         .mime_type("image/jpeg"),
                 )
-                .add_text("attachments[0][name]", "First attachment")
+                .add_text("attachments[][name]", "First attachment")
                 .add_part(
-                    "attachments[0][file]",
+                    "attachments[][file]",
                     Part::bytes(attachment1_content.to_vec())
                         .file_name("attachment1.txt")
                         .mime_type("text/plain"),
                 )
-                .add_text("attachments[1][name]", "Second attachment")
+                .add_text("attachments[][name]", "Second attachment")
                 .add_part(
-                    "attachments[1][file]",
+                    "attachments[][file]",
                     Part::bytes(attachment2_content.to_vec())
                         .file_name("attachment2.txt")
                         .mime_type("text/plain"),
@@ -641,26 +448,26 @@ async fn test_mixed_create_post() {
         .add_part("metadata[created_at]", Part::text("2024-12-29"))
         // Add first attachment with file and metadata
         .add_part(
-            "attachments[0][file]",
+            "attachments[][file]",
             Part::bytes(vec![1, 2, 3, 4])
                 .file_name("test1.bin")
                 .mime_type("application/octet-stream"),
         )
-        .add_part("attachments[0][name]", Part::text("Test Attachment 1"))
+        .add_part("attachments[][name]", Part::text("Test Attachment 1"))
         .add_part(
-            "attachments[0][description]",
+            "attachments[][description]",
             Part::text("First test attachment"),
         )
         // Add second attachment with file and metadata
         .add_part(
-            "attachments[1][file]",
+            "attachments[][file]",
             Part::bytes(vec![5, 6, 7, 8, 9])
                 .file_name("test2.bin")
                 .mime_type("application/octet-stream"),
         )
-        .add_part("attachments[1][name]", Part::text("Test Attachment 2"))
+        .add_part("attachments[][name]", Part::text("Test Attachment 2"))
         .add_part(
-            "attachments[1][description]",
+            "attachments[][description]",
             Part::text("Second test attachment"),
         );
 
@@ -1031,4 +838,94 @@ async fn test_query_params_numbers() {
     assert_eq!(params.0.big_num, 9007199254740991);
     assert!((params.0.small_float - 0.0000123).abs() < f64::EPSILON);
     assert!((params.0.exp_num - 123000.0).abs() < f64::EPSILON);
+}
+
+#[derive(Debug, Deserialize)]
+struct TestEncodedParams {
+    #[serde(rename = "foo=1")]
+    foo: Option<String>,
+    baz: Option<String>,
+}
+
+#[tokio::test]
+async fn test_encoded_path_params() {
+    setup();
+
+    let req = Request::builder()
+        .method(http::Method::GET)
+        .uri("/test?foo%3D1=bar&baz=qux%3D2")
+        .body(Body::empty())
+        .unwrap();
+
+    let Params(params, _) = Params::<TestEncodedParams>::from_request(req, &())
+        .await
+        .unwrap();
+    assert_eq!(params.foo, Some("bar".to_string()));
+    assert_eq!(params.baz, Some("qux=2".to_string()));
+}
+
+#[tokio::test]
+async fn test_json_params() {
+    setup();
+    let req = Request::builder()
+        .method(http::Method::POST)
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .uri("/test")
+        .body(Body::new(
+            json!({
+                "foo=1": "bar",
+                "baz": "qux=2"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let Params(params, _) = Params::<TestEncodedParams>::from_request(req, &())
+        .await
+        .unwrap();
+    assert_eq!(params.foo, Some("bar".to_string()));
+    assert_eq!(params.baz, Some("qux=2".to_string()));
+}
+
+#[tokio::test]
+async fn test_json_params_dont_decode() {
+    setup();
+    let req = Request::builder()
+        .method(http::Method::POST)
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .uri("/test")
+        .body(Body::new(
+            json!({
+                "foo%3D1": "bar",
+                "baz": "qux%3D2"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let Params(params, _) = Params::<TestEncodedParams>::from_request(req, &())
+        .await
+        .unwrap();
+    assert_eq!(params.foo, None);
+    assert_eq!(params.baz, Some("qux%3D2".to_string()));
+}
+
+#[tokio::test]
+async fn test_encoded_form_params() {
+    setup();
+    let req = Request::builder()
+        .method(http::Method::POST)
+        .header(
+            http::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        )
+        .uri("/test")
+        .body(Body::new("foo%3D1=bar&baz=qux%3D2".to_string()))
+        .unwrap();
+
+    let Params(params, _) = Params::<TestEncodedParams>::from_request(req, &())
+        .await
+        .unwrap();
+    assert_eq!(params.foo, Some("bar".to_string()));
+    assert_eq!(params.baz, Some("qux=2".to_string()));
 }
