@@ -8,10 +8,7 @@ pub enum Error {
     DecodeError(String),
     ReadError(String),
     IOError(String),
-    InvalidRequest,
-    InvalidParams,
-    InvalidPath,
-    InvalidFile,
+    MergeError(String),
 }
 
 impl IntoResponse for Error {
