@@ -183,10 +183,11 @@ cargo run --example nested_params
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+## Acknowledgments
+
+- The parameter parsing implementation is ported from [Rack's QueryParser](https://github.com/rack/rack), which provides robust and battle-tested parameter parsing capabilities.
+- This project draws inspiration from Ruby on Rails' parameter handling system, adapting its elegant approach to parameter processing for the Rust and Axum ecosystem.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-This project draws inspiration from Ruby on Rails' parameter handling system, adapting its elegant approach to parameter processing for the Rust and Axum ecosystem.
