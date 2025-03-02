@@ -1,8 +1,7 @@
-use crate::{parse_json, query_parser::QueryParser, Error, UploadFile, Value};
+use crate::{Error, UploadFile, Value, parse_json, query_parser::QueryParser};
 use ::serde::de::DeserializeOwned;
 use actson::feeder::SliceJsonFeeder;
 use axum::{
-    async_trait,
     body::to_bytes,
     extract::{FromRequest, FromRequestParts, Path, Request},
     http::{self},
@@ -14,7 +13,6 @@ use tempfile::NamedTempFile;
 #[derive(Debug, Default)]
 pub struct Params<T>(pub T, pub Vec<NamedTempFile>);
 
-#[async_trait]
 impl<T, S> FromRequest<S> for Params<T>
 where
     T: DeserializeOwned,
@@ -277,17 +275,17 @@ mod tests {
     use super::*;
     use ::serde::{Deserialize, Serialize};
     use axum::{
+        Json, Router,
         body::Body,
         extract::{FromRequest, Request},
         http::StatusCode,
         http::{self, HeaderValue},
         response::IntoResponse,
         routing::{get, post},
-        Json, Router,
     };
     use axum_test::{
-        multipart::{MultipartForm, Part},
         TestServer,
+        multipart::{MultipartForm, Part},
     };
     use log::debug;
     use serde_json::json;
@@ -418,7 +416,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_path_params() {
-        let app = Router::new().route("/users/:id", get(test_params_handler));
+        let app = Router::new().route("/users/{id}", get(test_params_handler));
         let server = TestServer::new(app).unwrap();
 
         let response = server
@@ -510,7 +508,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_combined_params() {
-        let app = Router::new().route("/users/:id", post(test_params_handler));
+        let app = Router::new().route("/users/{id}", post(test_params_handler));
         let server = TestServer::new(app).unwrap();
 
         let json_data = json!({
@@ -655,7 +653,7 @@ mod tests {
         use tokio::io::AsyncReadExt;
 
         let app = Router::new().route(
-            "/posts/:category",
+            "/posts/{category}",
             post(|params: Params<MixedPostParams>| async move {
                 debug!("params: {:#?}", params);
                 let MixedPostParams {
@@ -863,7 +861,7 @@ mod tests {
     #[tokio::test]
     async fn test_complex_params() {
         setup();
-        let app = Router::new().route("/users/:user_id", post(complex_handler));
+        let app = Router::new().route("/users/{user_id}", post(complex_handler));
         let server = TestServer::new(app).unwrap();
 
         // Prepare multipart form data

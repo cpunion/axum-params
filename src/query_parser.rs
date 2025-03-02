@@ -257,7 +257,7 @@ fn params_hash_has_key(hash: &HashMap<String, Value>, key: &str) -> bool {
 mod tests {
     // Port from: https://github.com/rack/rack/blob/main/test/spec_utils.rb
 
-    use crate::query_parser::{QueryParser, Value, DEFAULT_PARAM_DEPTH_LIMIT};
+    use crate::query_parser::{DEFAULT_PARAM_DEPTH_LIMIT, QueryParser, Value};
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
