@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use actson::{
-    feeder::{JsonFeeder, SliceJsonFeeder},
     JsonEvent, JsonParser,
+    feeder::{JsonFeeder, SliceJsonFeeder},
 };
 use log::debug;
 
@@ -164,7 +164,7 @@ pub fn parse_json(feeder: SliceJsonFeeder) -> Result<Value, JsonError> {
                         _ => {
                             return Err(JsonError::SyntaxError(
                                 "Invalid JSON array end".to_string(),
-                            ))
+                            ));
                         }
                     }
                 } else {
@@ -223,7 +223,7 @@ pub fn parse_json(feeder: SliceJsonFeeder) -> Result<Value, JsonError> {
 mod tests {
     use actson::feeder::SliceJsonFeeder;
 
-    use crate::{parse_json, Number, Value, N};
+    use crate::{N, Number, Value, parse_json};
 
     #[test]
     fn test_parse_json_numbers() {

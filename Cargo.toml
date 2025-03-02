@@ -1,7 +1,7 @@
 [package]
 name = "axum-params"
 version = "0.3.0"
-edition = "2021"
+edition = "2024"
 license = "MIT"
 description = "A Rails-like powerful parameter handling library for Axum"
 repository = "https://github.com/cpunion/axum-params"
@@ -9,28 +9,28 @@ keywords = ["axum", "params", "serde", "rails"]
 categories = ["web-programming"]
 
 [dependencies]
-actson = "1.1.0"
-async-trait = "0.1.83"
-axum = { version = "0.7", features = ["multipart", "macros"] }
-axum-macros = "0.4.2"
+actson = "2.0.1"
+async-trait = "0.1.86"
+axum = { version = "0.8.1", features = ["multipart", "macros"] }
+axum-macros = "0.5.0"
 form_urlencoded = "1.2.1"
-log = "0.4.20"
+log = "0.4.26"
 mime = "0.3.17"
 multer = "3.0.0"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.134"
+serde_json = "1.0.139"
 serde_urlencoded = "0.7.1"
-tempfile = "3.8.1"
-tokio = { version = "1.34.0", features = ["full"] }
+tempfile = "3.17.1"
+tokio = { version = "1.43.0", features = ["full"] }
 url = "2.5.4"
 
 [dev-dependencies]
-axum-test = "16.4.1"
+axum-test = "17.2.0"
 env_logger = "0.11.6"
 futures-util = "0.3.29"
 maplit = "1.0.2"
 pretty_assertions = "1.4.0"
-serde_json = "1.0.134"
+serde_json = "1.0.139"
 
 [[example]]
 name = "basic_params"

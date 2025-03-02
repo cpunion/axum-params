@@ -1,10 +1,10 @@
-use crate::{Number, N};
+use crate::{N, Number};
 
 use super::Value;
 use log::debug;
 use serde::{
-    de::{self, MapAccess, SeqAccess, Visitor},
     Deserialize, Deserializer,
+    de::{self, MapAccess, SeqAccess, Visitor},
 };
 use std::collections::HashMap;
 
