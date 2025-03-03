@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/cpunion/axum-params/compare/v0.4.0...v0.4.1) - 2025-03-03
+
+### Other
+
+- add release workflow
+- update GitHub Actions dependencies in CI workflow
+- update changelog for v0.4.0
+
 ## v0.4.0 (2025-03-03)
 
 ### Changes

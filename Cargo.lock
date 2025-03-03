@@ -195,7 +195,7 @@ dependencies = [
 
 [[package]]
 name = "axum-params"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "actson",
  "async-trait",
