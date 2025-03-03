@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.0 (2025-03-03)
+
+### Changes
+- Upgrade to axum@0.8.1
+- Upgrade to Rust Edition 2024
+- Update dependencies
+- Remove unused trait ParamsReader
+
 ## v0.3.0 (2025-01-02)
 
 ### Breaking Changes
