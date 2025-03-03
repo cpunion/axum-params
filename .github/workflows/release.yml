@@ -1,4 +1,4 @@
-name: release mcp-sdk crates
+name: release axum-params crates
 
 permissions:
   pull-requests: write
