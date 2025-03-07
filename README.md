@@ -52,7 +52,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-axum-params = "0.1"
+axum-params = "0.4"
 ```
 
 ## Quick Start
