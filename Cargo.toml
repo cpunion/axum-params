@@ -10,7 +10,7 @@ categories = ["web-programming"]
 
 [dependencies]
 actson = "2.0.1"
-axum = { version = "0.8.1", features = ["multipart", "macros"] }
+axum = { version = "0.8.3", features = ["multipart", "macros"] }
 axum-macros = "0.5.0"
 form_urlencoded = "1.2.1"
 log = "0.4.26"
