@@ -104,17 +104,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-trait"
-version = "0.1.87"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d556ec1359574147ec0c4fc5eb525f3f23263a592b1a9c07e0a75b427de55c97"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "auto-future"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -198,7 +187,6 @@ name = "axum-params"
 version = "0.4.0"
 dependencies = [
  "actson",
- "async-trait",
  "axum",
  "axum-macros",
  "axum-test",
@@ -207,7 +195,6 @@ dependencies = [
  "futures-util",
  "log",
  "maplit",
- "mime",
  "multer",
  "pretty_assertions",
  "serde",

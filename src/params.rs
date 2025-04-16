@@ -1202,4 +1202,163 @@ mod tests {
         assert_eq!(params.foo, Some("bar".to_string()));
         assert_eq!(params.baz, Some("qux=2".to_string()));
     }
+
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    pub struct OrderId(String);
+
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    pub enum CurrencyCode {
+        #[serde(rename = "usd")]
+        Usd,
+        #[serde(rename = "gbp")]
+        Gbp,
+        #[serde(rename = "cad")]
+        Cad,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    struct PaymentRequest {
+        order_id: OrderId,
+        amount: f64,
+        currency: CurrencyCode,
+        description: Option<String>,
+    }
+
+    #[axum::debug_handler]
+    async fn payment_handler(Params(payment, _): Params<PaymentRequest>) -> impl IntoResponse {
+        let response = json!({
+            "order_id": payment.order_id.0,
+            "amount": payment.amount,
+            "currency": payment.currency,
+            "description": payment.description,
+            "processed": true
+        });
+
+        (StatusCode::OK, serde_json::to_string(&response).unwrap())
+    }
+
+    // Test for JSON body
+    #[tokio::test]
+    async fn test_currency_code_json() {
+        setup();
+
+        let json = r#"{
+        "order_id": "1234567890",
+        "amount": 99.99,
+        "currency": "usd",
+        "description": "Test payment"
+    }"#;
+
+        let req = Request::builder()
+            .method(http::Method::POST)
+            .header(http::header::CONTENT_TYPE, "application/json")
+            .body(Body::from(json))
+            .unwrap();
+
+        let params = Params::<PaymentRequest>::from_request(req, &())
+            .await
+            .unwrap();
+        assert_eq!(params.0.order_id.0, "1234567890");
+        assert_eq!(params.0.amount, 99.99);
+        assert_eq!(params.0.currency, CurrencyCode::Usd);
+        assert_eq!(params.0.description, Some("Test payment".to_string()));
+    }
+
+    // Test for request parameters (query params)
+    #[tokio::test]
+    async fn test_currency_code_query_params() {
+        setup();
+
+        let app = Router::new().route("/payment", get(payment_handler));
+        let server = TestServer::new(app).unwrap();
+
+        let response = server
+            .get("/payment")
+            .add_query_params(&[
+                ("order_id", "1234567890"),
+                ("amount", "199.99"),
+                ("currency", "gbp"),
+                ("description", "Query payment"),
+            ])
+            .await;
+
+        assert_eq!(response.status_code(), StatusCode::OK);
+
+        let body: serde_json::Value = response.json();
+        assert_eq!(body["order_id"], "1234567890");
+        assert_eq!(body["amount"], 199.99);
+        assert_eq!(body["currency"], "gbp");
+        assert_eq!(body["description"], "Query payment");
+        assert_eq!(body["processed"], true);
+    }
+
+    // Test for path parameters
+    #[tokio::test]
+    async fn test_currency_code_path_params() {
+        setup();
+
+        // Define a handler that extracts currency from path
+        async fn path_handler(
+            Path(currency): Path<CurrencyCode>,
+            Params(payment, _): Params<PaymentRequest>,
+        ) -> impl IntoResponse {
+            let response = json!({
+                "order_id": payment.order_id.0,
+                "amount": payment.amount,
+                "currency": currency,
+                "description": payment.description,
+                "processed": true
+            });
+
+            (StatusCode::OK, serde_json::to_string(&response).unwrap())
+        }
+
+        let app = Router::new().route("/payment/{currency}", post(path_handler));
+        let server = TestServer::new(app).unwrap();
+
+        let json_data = json!({
+            "order_id": "1234567890",
+            "amount": 299.99,
+            "description": "Path payment"
+        });
+
+        let response = server.post("/payment/cad").json(&json_data).await;
+
+        assert_eq!(response.status_code(), StatusCode::OK);
+
+        let body: serde_json::Value = response.json();
+        assert_eq!(body["order_id"], "1234567890");
+        assert_eq!(body["amount"], 299.99);
+        assert_eq!(body["currency"], "cad");
+        assert_eq!(body["description"], "Path payment");
+        assert_eq!(body["processed"], true);
+    }
+
+    // Test for form data
+    #[tokio::test]
+    async fn test_currency_code_form_data() {
+        setup();
+
+        let app = Router::new().route("/payment", post(payment_handler));
+        let server = TestServer::new(app).unwrap();
+
+        let response = server
+            .post("/payment")
+            .form(&[
+                ("order_id", "1234567890"),
+                ("amount", "399.99"),
+                ("currency", "gbp"),
+                ("description", "Form payment"),
+            ])
+            .await;
+
+        assert_eq!(response.status_code(), StatusCode::OK);
+
+        let body: serde_json::Value = response.json();
+        assert_eq!(body["order_id"], "1234567890");
+        assert_eq!(body["amount"], 399.99);
+        assert_eq!(body["currency"], "gbp");
+        assert_eq!(body["description"], "Form payment");
+        assert_eq!(body["processed"], true);
+    }
 }

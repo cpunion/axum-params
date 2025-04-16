@@ -361,9 +361,40 @@ impl<'de> Deserializer<'de> for Value {
         }
     }
 
+    fn deserialize_enum<V>(
+        self,
+        _name: &'static str,
+        _variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self {
+            Value::XStr(s) | Value::String(s) => visitor.visit_enum(s.into_deserializer()),
+            _ => self.deserialize_any(visitor),
+        }
+    }
+
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self {
+            Value::XStr(s) | Value::String(s) => {
+                visitor.visit_newtype_struct(s.into_deserializer())
+            }
+            _ => self.deserialize_any(visitor),
+        }
+    }
+
     serde::forward_to_deserialize_any! {
-        str string bytes byte_buf unit newtype_struct seq tuple
-        tuple_struct map enum unit_struct struct identifier ignored_any
+        str string bytes byte_buf unit  seq tuple
+        tuple_struct map  unit_struct struct identifier ignored_any
     }
 }
 
